@@ -1,0 +1,387 @@
+/**
+ * Contact-unlock purchase lifecycle.
+ *
+ * Invariants enforced here:
+ *   1. The amount is decided by the server. `createUnlockPayment` takes the
+ *      price from configuration; there is no code path by which a request body
+ *      can influence it.
+ *   2. A payment settles ONLY after `provider.verifyTransaction` — a
+ *      server-to-server call to the gateway — returns `verified: true` for the
+ *      matching transaction id, amount and currency. The success redirect is
+ *      never trusted on its own.
+ *   3. Settlement is idempotent. The state transition is a conditional
+ *      `UPDATE ... WHERE status = 'PENDING'`, so a replayed IPN changes nothing
+ *      and cannot mint a second unlock.
+ *   4. A user holds at most one ACTIVE unlock per property, enforced by the
+ *      partial unique index `contact_unlocks_active_uq`.
+ */
+import type { AuthUser } from "@/server/auth/session";
+import type { PaymentProvider } from "./provider";
+import { batch, changes, execute, isUniqueViolation, queryOne } from "@/server/db/client";
+import { newId, newToken } from "@/lib/ids";
+import { nowIso } from "@/lib/time";
+import { notify } from "@/server/notifications/notify";
+
+export const CURRENCY = "BDT";
+
+export interface CreatePaymentUrls {
+  successUrl: string;
+  failUrl: string;
+  cancelUrl: string;
+  ipnUrl: string;
+}
+
+export type CreateUnlockPaymentResult =
+  | { status: "ALREADY_UNLOCKED" }
+  | { status: "OWN_PROPERTY" }
+  | { status: "NOT_FOUND" }
+  | { status: "GATEWAY_ERROR"; reason: string }
+  | { status: "REDIRECT"; redirectUrl: string; transactionId: string; paymentId: string };
+
+interface PropertyForPayment {
+  id: string;
+  public_ref: number;
+  title: string;
+  owner_id: string;
+  status: string;
+}
+
+export async function createUnlockPayment(
+  db: D1Database,
+  args: {
+    user: AuthUser;
+    propertyId: string;
+    /** Server-side price. NEVER sourced from the request. */
+    priceBdt: number;
+    provider: PaymentProvider;
+    urls: CreatePaymentUrls;
+  },
+): Promise<CreateUnlockPaymentResult> {
+  const { user, propertyId, priceBdt, provider, urls } = args;
+
+  const property = await queryOne<PropertyForPayment>(
+    db,
+    `SELECT id, public_ref, title, owner_id, status FROM properties WHERE id = ?`,
+    [propertyId],
+  );
+  // A listing that is not publicly visible cannot be purchased, and we do not
+  // distinguish "hidden" from "missing" in the response.
+  if (!property || property.status !== "APPROVED") return { status: "NOT_FOUND" };
+
+  // Owners already see their own contact details for free.
+  if (property.owner_id === user.id) return { status: "OWN_PROPERTY" };
+
+  const existing = await queryOne<{ id: string }>(
+    db,
+    `SELECT u.id
+       FROM contact_unlocks u
+       JOIN payments p ON p.id = u.payment_id
+      WHERE u.user_id = ? AND u.property_id = ? AND u.status = 'ACTIVE' AND p.status = 'PAID'
+      LIMIT 1`,
+    [user.id, propertyId],
+  );
+  // Returning here is what stops a second charge for a property the user has
+  // already paid for.
+  if (existing) return { status: "ALREADY_UNLOCKED" };
+
+  const transactionId = buildTransactionId(property.public_ref);
+  const paymentId = newId("pay");
+  const unlockId = newId("unl");
+  const now = nowIso();
+
+  await batch(db, [
+    {
+      sql: `INSERT INTO payments
+              (id, transaction_id, user_id, property_id, amount, currency, gateway, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
+      params: [
+        paymentId,
+        transactionId,
+        user.id,
+        propertyId,
+        priceBdt,
+        CURRENCY,
+        provider.name,
+        now,
+        now,
+      ],
+    },
+    {
+      sql: `INSERT INTO contact_unlocks
+              (id, user_id, property_id, payment_id, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'PENDING', ?, ?)`,
+      params: [unlockId, user.id, propertyId, paymentId, now, now],
+    },
+  ]);
+
+  const session = await provider.createSession({
+    transactionId,
+    amount: priceBdt,
+    currency: CURRENCY,
+    productName: `যোগাযোগের তথ্য — ${property.title}`.slice(0, 100),
+    productCategory: "contact-unlock",
+    customer: {
+      name: user.name,
+      email: user.email ?? `${user.id}@users.dayarampur.com`,
+      phone: user.phone ?? "01700000000",
+      address: "Dayarampur, Bagatipara, Natore",
+      city: "Natore",
+      country: "Bangladesh",
+    },
+    ...urls,
+    metadata: { userId: user.id, propertyId, paymentId },
+  });
+
+  if (!session.ok || !session.redirectUrl) {
+    await execute(
+      db,
+      `UPDATE payments SET status = 'FAILED', failure_reason = ?, updated_at = ?
+        WHERE id = ? AND status = 'PENDING'`,
+      [session.failureReason ?? "session_failed", nowIso(), paymentId],
+    );
+    return { status: "GATEWAY_ERROR", reason: session.failureReason ?? "session_failed" };
+  }
+
+  return {
+    status: "REDIRECT",
+    redirectUrl: session.redirectUrl,
+    transactionId,
+    paymentId,
+  };
+}
+
+/**
+ * SSLCOMMERZ caps `tran_id` at 30 characters, so the reference stays compact:
+ * `U<listing ref>-<random>`.
+ */
+function buildTransactionId(publicRef: number): string {
+  const random = newToken(8).replace(/[^A-Za-z0-9]/g, "").slice(0, 12);
+  return `U${publicRef}-${random}`.slice(0, 30);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Settlement                                                                  */
+/* -------------------------------------------------------------------------- */
+
+export type SettleOutcome =
+  | { result: "SETTLED"; paymentId: string; propertyId: string; userId: string }
+  | { result: "ALREADY_SETTLED"; paymentId: string; propertyId: string; userId: string }
+  | { result: "REJECTED"; reason: string; paymentId?: string }
+  | { result: "UNKNOWN_TRANSACTION" };
+
+interface PaymentRow {
+  id: string;
+  transaction_id: string;
+  user_id: string;
+  property_id: string;
+  amount: number;
+  currency: string;
+  status: string;
+}
+
+/**
+ * Settles a payment from an IPN or from the return-URL handler.
+ *
+ * Both entry points call this same function; whichever arrives first performs
+ * the transition and the other becomes a no-op.
+ */
+export async function settlePayment(
+  db: D1Database,
+  provider: PaymentProvider,
+  args: {
+    transactionId: string;
+    validationId: string | null;
+    /** Raw gateway payload, stored for dispute resolution. */
+    rawPayload?: unknown;
+    /** Set when the caller has already checked the IPN signature. */
+    signatureVerified?: boolean;
+  },
+): Promise<SettleOutcome> {
+  const payment = await queryOne<PaymentRow>(
+    db,
+    `SELECT id, transaction_id, user_id, property_id, amount, currency, status
+       FROM payments WHERE transaction_id = ?`,
+    [args.transactionId],
+  );
+  if (!payment) return { result: "UNKNOWN_TRANSACTION" };
+
+  if (payment.status === "PAID") {
+    return {
+      result: "ALREADY_SETTLED",
+      paymentId: payment.id,
+      propertyId: payment.property_id,
+      userId: payment.user_id,
+    };
+  }
+
+  if (!args.validationId) {
+    await markFailed(db, payment.id, "missing_validation_id");
+    return { result: "REJECTED", reason: "missing_validation_id", paymentId: payment.id };
+  }
+
+  // Authoritative server-to-server verification. Amount and currency come from
+  // OUR payment row, so a gateway response for a different (cheaper) order
+  // cannot settle this one.
+  const verification = await provider.verifyTransaction({
+    validationId: args.validationId,
+    expectedTransactionId: payment.transaction_id,
+    expectedAmount: payment.amount,
+    expectedCurrency: payment.currency,
+  });
+
+  if (!verification.verified) {
+    const reason = verification.failureReason ?? `unverified_${verification.status}`;
+    // PENDING/UNKNOWN mean "not settled yet" rather than "failed" — leave the
+    // payment pending so a later IPN can still settle it.
+    if (verification.status === "FAILED" || verification.status === "CANCELLED") {
+      await markFailed(
+        db,
+        payment.id,
+        reason,
+        verification.status === "CANCELLED" ? "CANCELLED" : "FAILED",
+      );
+    }
+    return { result: "REJECTED", reason, paymentId: payment.id };
+  }
+
+  const now = nowIso();
+
+  // The idempotency gate. Only the first caller sees changes === 1.
+  let updated: number;
+  try {
+    const result = await execute(
+      db,
+      `UPDATE payments
+          SET status = 'PAID',
+              validation_id = ?,
+              bank_tran_id = ?,
+              card_type = ?,
+              risk_level = ?,
+              gateway_status = ?,
+              raw_payload = ?,
+              paid_at = ?,
+              updated_at = ?
+        WHERE id = ? AND status = 'PENDING'`,
+      [
+        verification.validationId ?? args.validationId,
+        verification.bankTransactionId ?? null,
+        verification.cardType ?? null,
+        verification.riskLevel ?? null,
+        verification.status,
+        args.rawPayload ? JSON.stringify(args.rawPayload).slice(0, 8000) : null,
+        now,
+        now,
+        payment.id,
+      ],
+    );
+    updated = changes(result);
+  } catch (error) {
+    // A duplicate IPN carrying a val_id already recorded against this payment
+    // trips the UNIQUE index on `validation_id`. That is success, replayed.
+    if (isUniqueViolation(error)) {
+      return {
+        result: "ALREADY_SETTLED",
+        paymentId: payment.id,
+        propertyId: payment.property_id,
+        userId: payment.user_id,
+      };
+    }
+    throw error;
+  }
+
+  if (updated === 0) {
+    return {
+      result: "ALREADY_SETTLED",
+      paymentId: payment.id,
+      propertyId: payment.property_id,
+      userId: payment.user_id,
+    };
+  }
+
+  await activateUnlock(db, payment, now);
+
+  await notify(db, {
+    userId: payment.user_id,
+    type: "PAYMENT_SUCCESSFUL",
+    titleBn: "পেমেন্ট সফল হয়েছে",
+    bodyBn: `৳${payment.amount} পেমেন্ট গ্রহণ করা হয়েছে। এখন মালিকের যোগাযোগের তথ্য দেখতে পারবেন।`,
+    link: `/dashboard/unlocked`,
+    entityType: "payment",
+    entityId: payment.id,
+  });
+
+  return {
+    result: "SETTLED",
+    paymentId: payment.id,
+    propertyId: payment.property_id,
+    userId: payment.user_id,
+  };
+}
+
+async function activateUnlock(db: D1Database, payment: PaymentRow, now: string): Promise<void> {
+  try {
+    await batch(db, [
+      {
+        sql: `UPDATE contact_unlocks
+                 SET status = 'ACTIVE', unlocked_at = ?, updated_at = ?
+               WHERE payment_id = ? AND status = 'PENDING'`,
+        params: [now, now, payment.id],
+      },
+      {
+        sql: `UPDATE properties
+                 SET unlocks_count = unlocks_count + 1, updated_at = ?
+               WHERE id = ?`,
+        params: [now, payment.property_id],
+      },
+    ]);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      // The user already held an ACTIVE unlock for this property — they have
+      // access either way, so this row stays PENDING and is flagged for a
+      // refund review rather than failing the request.
+      console.warn(
+        `[unlock] duplicate active unlock for user=${payment.user_id} property=${payment.property_id}; payment=${payment.id} needs refund review`,
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
+async function markFailed(
+  db: D1Database,
+  paymentId: string,
+  reason: string,
+  status: "FAILED" | "CANCELLED" = "FAILED",
+): Promise<void> {
+  await execute(
+    db,
+    `UPDATE payments SET status = ?, failure_reason = ?, updated_at = ?
+      WHERE id = ? AND status = 'PENDING'`,
+    [status, reason.slice(0, 200), nowIso(), paymentId],
+  );
+}
+
+/** Payment status for the return-URL page and the polling endpoint. */
+export async function getPaymentStatus(
+  db: D1Database,
+  transactionId: string,
+  userId: string,
+): Promise<{
+  status: string;
+  propertyId: string;
+  propertySlug: string;
+  amount: number;
+} | null> {
+  return queryOne(
+    db,
+    `SELECT pay.status AS status,
+            pay.property_id AS propertyId,
+            p.slug AS propertySlug,
+            pay.amount AS amount
+       FROM payments pay
+       JOIN properties p ON p.id = pay.property_id
+      WHERE pay.transaction_id = ? AND pay.user_id = ?`,
+    [transactionId, userId],
+  );
+}

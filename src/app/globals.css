@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   dayarampur.com design system
+   Clean · modern · local · trustworthy.
+   White canvas, deep green primary, soft green surfaces, rounded cards.
+   The site is intentionally light-only: the brand relies on a white canvas.
+   ========================================================================== */
+
+@theme {
+  /* --- Brand: deep green --- */
+  --color-brand-50: #f0f9f3;
+  --color-brand-100: #daf0e2;
+  --color-brand-200: #b7e1c8;
+  --color-brand-300: #86caa5;
+  --color-brand-400: #51ac7e;
+  --color-brand-500: #2f8f60;
+  --color-brand-600: #1f7449;
+  --color-brand-700: #0b6b3a; /* primary */
+  --color-brand-800: #0a5730;
+  --color-brand-900: #084727;
+  --color-brand-950: #032716;
+
+  /* --- Soft green section surfaces --- */
+  --color-surface-soft: #f2f9f4;
+  --color-surface-mint: #eaf5ee;
+
+  /* --- Neutral ink --- */
+  --color-ink-50: #f8fafa;
+  --color-ink-100: #f1f4f3;
+  --color-ink-200: #e4e8e7;
+  --color-ink-300: #cbd2d0;
+  --color-ink-400: #98a3a0;
+  --color-ink-500: #6b7674;
+  --color-ink-600: #4d5755;
+  --color-ink-700: #38403f;
+  --color-ink-800: #232928;
+  --color-ink-900: #131817;
+
+  /* --- Accents --- */
+  --color-gold-100: #fff4d6;
+  --color-gold-500: #e0a106; /* featured / verified highlight */
+  --color-gold-700: #8a6203;
+  --color-danger-50: #fef2f2;
+  --color-danger-500: #dc2626;
+  --color-danger-700: #991b1b;
+  --color-info-50: #eff6ff;
+  --color-info-500: #2563eb;
+
+  /* --- Typography --- */
+  --font-bangla: var(--font-hind-siliguri), "Hind Siliguri", "Noto Sans Bengali",
+    "SolaimanLipi", system-ui, sans-serif;
+  --font-sans: var(--font-hind-siliguri), "Hind Siliguri", system-ui,
+    -apple-system, "Segoe UI", sans-serif;
+
+  /* --- Radii: consistently rounded --- */
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+  --radius-pill: 999px;
+
+  /* --- Elevation: subtle only --- */
+  --shadow-card: 0 1px 2px rgb(19 24 23 / 0.04), 0 4px 16px rgb(19 24 23 / 0.06);
+  --shadow-card-hover: 0 2px 4px rgb(19 24 23 / 0.06),
+    0 12px 32px rgb(19 24 23 / 0.1);
+  --shadow-pop: 0 12px 40px rgb(19 24 23 / 0.16);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: #ffffff;
+    color: var(--color-ink-800);
+    font-family: var(--font-bangla);
+    /* Bangla conjuncts need a little more vertical room than Latin. */
+    line-height: 1.7;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    line-height: 1.35;
+    color: var(--color-ink-900);
+    font-weight: 600;
+    text-wrap: balance;
+  }
+
+  /* Visible, brand-coloured focus for keyboard users everywhere. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-700);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: var(--color-brand-100);
+    color: var(--color-brand-900);
+  }
+}
+
+@layer utilities {
+  /* Page gutter used by every top-level section. */
+  .container-page {
+    width: 100%;
+    margin-inline: auto;
+    max-width: 80rem;
+    padding-inline: 1rem;
+  }
+  @media (min-width: 640px) {
+    .container-page {
+      padding-inline: 1.5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .container-page {
+      padding-inline: 2rem;
+    }
+  }
+
+  /* Clamp helpers for card titles / descriptions. */
+  .line-clamp-1-safe {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .line-clamp-2-safe {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Screen-reader-only text that becomes visible on focus (skip links). */
+  .sr-only-focusable:not(:focus):not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /* Locked private information: blurred *decoratively* only. The real value is
+     never sent to the browser — see src/server/properties/contact.ts. */
+  .blur-locked {
+    filter: blur(6px);
+    user-select: none;
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

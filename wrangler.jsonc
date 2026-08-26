@@ -1,0 +1,101 @@
+/**
+ * Wrangler configuration for dayarampur.com
+ *
+ * Secrets (SSLCOMMERZ credentials, SESSION_SECRET, TURNSTILE_SECRET, email
+ * credentials) are NEVER stored here. Set them with:
+ *   npx wrangler secret put SSLCOMMERZ_STORE_PASSWORD --env production
+ * For local development put them in `.dev.vars` (git-ignored).
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dayarampur",
+  "compatibility_date": "2026-08-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "vinext/server/fetch-handler",
+  "assets": {
+    "directory": "dist/client",
+    "not_found_handling": "none",
+    "binding": "ASSETS"
+  },
+  "cache": {
+    "enabled": true
+  },
+  "observability": {
+    "enabled": true
+  },
+
+  // ---- development (local `wrangler dev` / `vinext dev`) ----
+  "vars": {
+    "APP_ENV": "development",
+    "NEXT_PUBLIC_SITE_URL": "http://localhost:3001",
+    "SSLCOMMERZ_IS_SANDBOX": "true",
+    "CONTACT_UNLOCK_PRICE_BDT": "50"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dayarampur-dev",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PROPERTY_IMAGES",
+      "bucket_name": "dayarampur-property-images-dev"
+    }
+  ],
+
+  "env": {
+    "staging": {
+      "name": "dayarampur-staging",
+      "vars": {
+        "APP_ENV": "staging",
+        "NEXT_PUBLIC_SITE_URL": "https://staging.dayarampur.com",
+        "SSLCOMMERZ_IS_SANDBOX": "true",
+        "CONTACT_UNLOCK_PRICE_BDT": "50"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "dayarampur-staging",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "PROPERTY_IMAGES",
+          "bucket_name": "dayarampur-property-images-staging"
+        }
+      ]
+    },
+    "production": {
+      "name": "dayarampur",
+      "routes": [
+        { "pattern": "dayarampur.com", "custom_domain": true },
+        { "pattern": "www.dayarampur.com", "custom_domain": true }
+      ],
+      "vars": {
+        "APP_ENV": "production",
+        "NEXT_PUBLIC_SITE_URL": "https://dayarampur.com",
+        "SSLCOMMERZ_IS_SANDBOX": "false",
+        "CONTACT_UNLOCK_PRICE_BDT": "50"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "dayarampur-production",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "PROPERTY_IMAGES",
+          "bucket_name": "dayarampur-property-images"
+        }
+      ]
+    }
+  }
+}
