@@ -31,8 +31,13 @@ export function Turnstile({
   onToken: (token: string) => void;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
+  // Keeps the latest callback reachable from the widget without re-rendering
+  // it. Assigned inside an effect rather than during render, so a concurrent
+  // re-render never observes a half-updated ref.
   const callbackRef = React.useRef(onToken);
-  callbackRef.current = onToken;
+  React.useEffect(() => {
+    callbackRef.current = onToken;
+  }, [onToken]);
 
   React.useEffect(() => {
     if (!siteKey || !ref.current) return;

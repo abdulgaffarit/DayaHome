@@ -44,7 +44,7 @@ INSERT INTO amenities (id, slug, name_bn, icon, sort_order) VALUES
   ('amn_balcony',    'balcony',      'বারান্দা',           'panel-top',    7),
   ('amn_security',   'security',     'নিরাপত্তা প্রহরী',   'shield-check', 8),
   ('amn_cctv',       'cctv',         'সিসিটিভি',          'cctv',         9),
-  ('amn_lift_water', 'tank',         'পানির ট্যাংক',      'container',    10),
+  ('amn_tank',       'tank',         'পানির ট্যাংক',      'container',    10),
   ('amn_wifi',       'wifi',         'ইন্টারনেট/ওয়াইফাই', 'wifi',         11),
   ('amn_furnished',  'furniture',    'আসবাবপত্র',         'sofa',         12),
   ('amn_kitchen',    'kitchen',      'আলাদা রান্নাঘর',    'cooking-pot',  13),

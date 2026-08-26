@@ -11,14 +11,13 @@ import { newId } from "@/lib/ids";
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 export const MAX_IMAGES_PER_PROPERTY = 15;
 
-/** The only formats we accept, keyed by their magic-byte signature. */
-const ALLOWED_TYPES = {
-  "image/jpeg": { ext: "jpg" },
-  "image/png": { ext: "png" },
-  "image/webp": { ext: "webp" },
-} as const;
+/**
+ * The only formats we accept. The mapping from bytes to extension lives in
+ * `sniffImageType`, which is the single place a format is recognised.
+ */
+export const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
-export type AllowedMime = keyof typeof ALLOWED_TYPES;
+export type AllowedMime = (typeof ALLOWED_MIME_TYPES)[number];
 
 export type SniffResult =
   | { ok: true; mime: AllowedMime; ext: string }

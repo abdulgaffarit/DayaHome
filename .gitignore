@@ -56,3 +56,8 @@ coverage/
 *.sqlite
 *.sqlite3
 *.db
+
+# Generated seed artefacts (regenerate with `npm run db:seed`).
+.seed.sql
+.seed-images.sql
+.seed-images/

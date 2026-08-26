@@ -7,7 +7,6 @@ import type { CategoryDef } from "@/domain/categories";
 import { FURNISHED_STATES, TENANT_TYPES } from "@/domain/enums";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
-import { cn } from "@/lib/cn";
 
 const FURNISHED_LABEL_BN: Record<string, string> = {
   UNFURNISHED: "খালি",

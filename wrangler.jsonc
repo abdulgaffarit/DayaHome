@@ -27,7 +27,7 @@
   // ---- development (local `wrangler dev` / `vinext dev`) ----
   "vars": {
     "APP_ENV": "development",
-    "NEXT_PUBLIC_SITE_URL": "http://localhost:3001",
+    "NEXT_PUBLIC_SITE_URL": "http://localhost:3000",
     "SSLCOMMERZ_IS_SANDBOX": "true",
     "CONTACT_UNLOCK_PRICE_BDT": "50"
   },

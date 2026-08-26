@@ -63,10 +63,14 @@ export function ContactLockCard({
     }
   }, [propertyId, router, toast]);
 
-  // Someone who has already paid should not have to click again.
+  // Someone who has already paid should not have to click again. Guarded by a
+  // ref so a re-render mid-fetch cannot start a second request.
+  const autoRevealed = React.useRef(false);
   React.useEffect(() => {
-    if (hasUnlock && !contact) void reveal();
-  }, [hasUnlock, contact, reveal]);
+    if (!hasUnlock || autoRevealed.current) return;
+    autoRevealed.current = true;
+    void reveal();
+  }, [hasUnlock, reveal]);
 
   async function startPayment() {
     if (!isAuthenticated) {

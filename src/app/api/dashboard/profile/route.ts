@@ -1,6 +1,6 @@
 import { updateProfileSchema } from "@/domain/schemas";
 import { buildContext, requireAuth, requireSameOrigin } from "@/server/http/context";
-import { guarded, jsonError, jsonOk, validationError } from "@/server/http/responses";
+import { guarded, jsonOk, validationError } from "@/server/http/responses";
 import { execute, isUniqueViolation } from "@/server/db/client";
 import { nowIso } from "@/lib/time";
 import { changePassword } from "@/server/auth/service";
