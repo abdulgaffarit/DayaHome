@@ -236,6 +236,24 @@ export const updatePropertySchema = createPropertySchema.partial().extend({
 /* Search / filters                                                            */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Free-text filter value.
+ *
+ * Search parameters come from a URL anyone can hand-edit, so an over-long value
+ * is truncated rather than rejected. Throwing here would turn a crafted link
+ * into a 500 on a public page. Property *creation* still rejects over-long
+ * input, because there the length is a real mistake the user must see.
+ */
+const filterString = (max: number) =>
+  z
+    .unknown()
+    .transform((value) => {
+      if (typeof value !== "string") return undefined;
+      const trimmed = value.trim().slice(0, max);
+      return trimmed === "" ? undefined : trimmed;
+    })
+    .catch(undefined);
+
 export const SORT_OPTIONS = [
   "newest",
   "price_asc",
@@ -245,10 +263,10 @@ export const SORT_OPTIONS = [
 export type SortOption = (typeof SORT_OPTIONS)[number];
 
 export const searchQuerySchema = z.object({
-  q: optionalString(120),
+  q: filterString(120),
   category: categorySlugSchema.optional().catch(undefined),
-  area: optionalString(80),
-  propertyType: optionalString(60),
+  area: filterString(80),
+  propertyType: filterString(60),
   minPrice: z.coerce.number().min(0).max(1_000_000_000).optional().catch(undefined),
   maxPrice: z.coerce.number().min(0).max(1_000_000_000).optional().catch(undefined),
   bedrooms: optionalInt(0, 30),

@@ -166,4 +166,30 @@ describe("search query", () => {
   it("clamps the page number to a sane range", () => {
     expect(searchQuerySchema.parse({ page: "99999" }).page).toBe(1);
   });
+
+  it("truncates rather than throwing on an over-long filter value", () => {
+    // A hand-edited URL must never be able to 500 a public page.
+    const parsed = searchQuerySchema.parse({
+      q: "ক".repeat(500),
+      area: "a".repeat(500),
+      propertyType: "b".repeat(500),
+    });
+
+    expect(parsed.q).toHaveLength(120);
+    expect(parsed.area).toHaveLength(80);
+    expect(parsed.propertyType).toHaveLength(60);
+  });
+
+  it("never throws on arbitrary junk", () => {
+    for (const junk of [
+      { q: { nested: "object" } },
+      { area: ["array"] },
+      { minPrice: "not-a-number" },
+      { bedrooms: "NaN" },
+      { availableFrom: "not-a-date" },
+      { furnished: 12345 },
+    ]) {
+      expect(() => searchQuerySchema.parse(junk), JSON.stringify(junk)).not.toThrow();
+    }
+  });
 });

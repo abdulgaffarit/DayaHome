@@ -9,7 +9,7 @@ import { env as workerEnv } from "cloudflare:workers";
  * absent from that file — they are set with `wrangler secret put` — so they are
  * declared here as optional strings and read through checked accessors.
  */
-export interface AppEnv extends Env {
+interface AppSecrets {
   SESSION_SECRET?: string;
   SSLCOMMERZ_STORE_ID?: string;
   SSLCOMMERZ_STORE_PASSWORD?: string;
@@ -27,6 +27,14 @@ export interface AppEnv extends Env {
   NEXT_PUBLIC_MAP_ATTRIBUTION?: string;
   NEXT_PUBLIC_IMAGE_BASE_URL?: string;
 }
+
+/**
+ * `Omit` before intersecting: `wrangler types` includes any key present in a
+ * local `.dev.vars` as a *required* string, so extending `Env` directly would
+ * make the generated file's contents change this type — and break the build on
+ * a machine without that file. Secrets are optional here regardless.
+ */
+export type AppEnv = Omit<Env, keyof AppSecrets> & AppSecrets;
 
 export function getEnv(): AppEnv {
   return workerEnv as unknown as AppEnv;
