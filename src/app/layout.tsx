@@ -4,6 +4,7 @@ import "./globals.css";
 import { Header } from "@/components/site/header";
 import { Footer } from "@/components/site/footer";
 import { MobileBottomNav } from "@/components/site/mobile-bottom-nav";
+import { HideOnAdmin } from "@/components/site/site-chrome";
 import { ToastProvider } from "@/components/ui/toast";
 import { siteUrl } from "@/server/cloudflare/env";
 
@@ -68,12 +69,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           >
             মূল অংশে যান
           </a>
-          <Header />
+          <HideOnAdmin>
+            <Header />
+          </HideOnAdmin>
           {/* Bottom padding leaves room for the fixed mobile nav bar. */}
           <main id="main" className="flex-1 pb-20 lg:pb-0">
             {children}
           </main>
-          <Footer />
+          <HideOnAdmin>
+            <Footer />
+          </HideOnAdmin>
           <MobileBottomNav />
         </ToastProvider>
       </body>
