@@ -4,7 +4,29 @@ Three environments, all defined in `wrangler.jsonc`: development (top-level),
 `staging` and `production`. Each has its own D1 database and R2 bucket —
 production data is never touched by local development.
 
+All three set `workers_dev: true`, so every environment has a working
+`*.workers.dev` address independently of any custom domain.
+
+## The short version
+
+```bash
+npx wrangler login
+npm run cf:launch              # staging
+npm run cf:launch:production   # production
+```
+
+`scripts/deploy.sh` does everything in "First-time setup" below — create the
+database and bucket, write the real `database_id` into `wrangler.jsonc`, apply
+migrations, check secrets, verify, build, deploy — and prints the live URL. It
+is idempotent, so re-running it after fixing a missing secret just continues.
+
+`cf:launch:production` requires `dayarampur.com` to already be a zone in the
+account, because the production config declares custom-domain routes. Until it
+is, use staging.
+
 ## First-time setup for an environment
+
+The manual equivalent of the script above, if you would rather do it by hand.
 
 ### 1. Create resources
 

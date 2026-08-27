@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+#
+# One-command deploy of dayarampur.com to Cloudflare.
+#
+#   sh scripts/deploy.sh staging       # fastest path to a live URL
+#   sh scripts/deploy.sh production
+#
+# Creates the D1 database and R2 bucket if they do not exist, writes the real
+# database id into wrangler.jsonc, applies migrations, checks that the required
+# secrets are set, builds, and deploys. Safe to re-run — every step is a no-op
+# when the resource already exists.
+#
+# Prerequisite: `npx wrangler login` (opens a browser once).
+
+set -euo pipefail
+
+ENVIRONMENT="${1:-staging}"
+
+case "$ENVIRONMENT" in
+  staging)
+    DB_NAME="dayarampur-staging"
+    BUCKET="dayarampur-property-images-staging"
+    ENV_FLAG="--env staging"
+    ;;
+  production)
+    DB_NAME="dayarampur-production"
+    BUCKET="dayarampur-property-images"
+    ENV_FLAG="--env production"
+    ;;
+  *)
+    echo "usage: sh scripts/deploy.sh [staging|production]" >&2
+    exit 1
+    ;;
+esac
+
+step() { printf '\n\033[1;32m==>\033[0m \033[1m%s\033[0m\n' "$1"; }
+warn() { printf '\033[1;33m !\033[0m %s\n' "$1"; }
+
+# ---------------------------------------------------------------------------
+step "Checking Cloudflare authentication"
+if ! npx wrangler whoami >/dev/null 2>&1; then
+  echo "Not logged in. Run:  npx wrangler login" >&2
+  exit 1
+fi
+npx wrangler whoami | sed -n '/Account Name/,+2p' || true
+
+# ---------------------------------------------------------------------------
+step "Ensuring D1 database '$DB_NAME' exists"
+if npx wrangler d1 info "$DB_NAME" >/dev/null 2>&1; then
+  echo "already exists"
+else
+  npx wrangler d1 create "$DB_NAME"
+fi
+
+# `d1 info --json` is the stable way to read the uuid back, whether the
+# database was just created or already existed.
+DB_ID="$(npx wrangler d1 info "$DB_NAME" --json | node -e '
+  let raw = "";
+  process.stdin.on("data", (c) => (raw += c));
+  process.stdin.on("end", () => {
+    // Wrangler prefixes JSON output with human-readable lines on some versions.
+    const start = raw.indexOf("{");
+    const parsed = JSON.parse(raw.slice(start));
+    process.stdout.write(parsed.uuid ?? parsed.database_id ?? "");
+  });
+')"
+
+if [ -z "$DB_ID" ]; then
+  echo "Could not read the database id for $DB_NAME." >&2
+  echo "Run:  npx wrangler d1 info $DB_NAME    and paste the uuid into wrangler.jsonc" >&2
+  exit 1
+fi
+
+step "Writing database id into wrangler.jsonc"
+node scripts/set-database-id.mjs "$DB_NAME" "$DB_ID"
+
+# ---------------------------------------------------------------------------
+step "Ensuring R2 bucket '$BUCKET' exists"
+if npx wrangler r2 bucket info "$BUCKET" >/dev/null 2>&1; then
+  echo "already exists"
+else
+  npx wrangler r2 bucket create "$BUCKET"
+fi
+
+# ---------------------------------------------------------------------------
+step "Checking required secrets"
+EXISTING_SECRETS="$(npx wrangler secret list $ENV_FLAG 2>/dev/null || echo '[]')"
+MISSING=""
+for SECRET in SESSION_SECRET SSLCOMMERZ_STORE_ID SSLCOMMERZ_STORE_PASSWORD; do
+  case "$EXISTING_SECRETS" in
+    *"$SECRET"*) echo "  $SECRET: set" ;;
+    *) echo "  $SECRET: MISSING"; MISSING="$MISSING $SECRET" ;;
+  esac
+done
+
+if [ -n "$MISSING" ]; then
+  warn "Set the missing secrets, then re-run this script:"
+  for SECRET in $MISSING; do
+    if [ "$SECRET" = "SESSION_SECRET" ]; then
+      echo "    node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\" \\"
+      echo "      | npx wrangler secret put SESSION_SECRET $ENV_FLAG"
+    else
+      echo "    npx wrangler secret put $SECRET $ENV_FLAG"
+    fi
+  done
+  echo
+  warn "Without SSLCOMMERZ credentials the site works but payment fails cleanly."
+  printf 'Continue anyway? [y/N] '
+  read -r REPLY
+  case "$REPLY" in [yY]*) ;; *) exit 1 ;; esac
+fi
+
+# ---------------------------------------------------------------------------
+step "Applying database migrations"
+npx wrangler d1 migrations apply "$DB_NAME" --remote $ENV_FLAG
+
+# ---------------------------------------------------------------------------
+step "Verifying (typecheck, lint, tests)"
+npm run verify
+
+step "Building"
+npm run build
+
+step "Deploying to $ENVIRONMENT"
+npx vinext-cloudflare deploy --config dist/server/wrangler.json $ENV_FLAG
+
+# ---------------------------------------------------------------------------
+step "Done"
+cat <<NOTE
+
+The deploy output above prints the live URL (https://<worker>.<subdomain>.workers.dev).
+
+Next:
+  1. Open it and check the homepage renders.
+  2. Register an account, then promote it to SUPER_ADMIN:
+       npx wrangler d1 execute $DB_NAME --remote $ENV_FLAG \\
+         --command "UPDATE users SET role='SUPER_ADMIN' WHERE phone='01XXXXXXXXX'"
+  3. Set the IPN URL in the SSLCOMMERZ merchant panel to:
+       <your-url>/api/payments/sslcommerz/ipn
+  4. Set NEXT_PUBLIC_SITE_URL in wrangler.jsonc to the real URL and redeploy —
+     it drives canonical URLs, the sitemap and the payment callbacks.
+
+NOTE

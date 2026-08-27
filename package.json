@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify": "npm run typecheck && npm run lint && npm run test",
     "cf:typegen": "wrangler types",
     "db:migrate": "wrangler d1 migrations apply dayarampur-dev --local",
     "db:migrate:remote": "wrangler d1 migrations apply dayarampur-dev --remote",
@@ -20,10 +21,11 @@
     "db:seed": "tsx scripts/seed.ts > .seed.sql && wrangler d1 execute dayarampur-dev --local --file .seed.sql",
     "db:seed:images": "node scripts/seed-images.mjs > .seed-images.sql && sh .seed-images/upload.sh && wrangler d1 execute dayarampur-dev --local --file .seed-images.sql",
     "db:studio": "wrangler d1 execute dayarampur-dev --local --command \"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\"",
+    "cf:launch": "sh scripts/deploy.sh staging",
+    "cf:launch:production": "sh scripts/deploy.sh production",
     "cf:deploy": "vinext build && vinext-cloudflare deploy --config dist/server/wrangler.json",
     "cf:deploy:staging": "vinext build && vinext-cloudflare deploy --config dist/server/wrangler.json --env staging",
-    "cf:deploy:production": "vinext build && vinext-cloudflare deploy --config dist/server/wrangler.json --env production",
-    "verify": "npm run typecheck && npm run lint && npm run test"
+    "cf:deploy:production": "vinext build && vinext-cloudflare deploy --config dist/server/wrangler.json --env production"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

@@ -295,19 +295,37 @@ npm run preview   # run the built Worker locally with Wrangler
 
 ## Deployment
 
+### One command
+
+```bash
+npx wrangler login     # once — opens a browser
+npm run cf:launch      # staging: provisions everything, then deploys
+```
+
+`scripts/deploy.sh` creates the D1 database and R2 bucket if they do not exist,
+writes the real `database_id` into `wrangler.jsonc`, applies migrations, checks
+that the required secrets are set, runs `npm run verify`, builds, and deploys.
+Every step is a no-op when the resource already exists, so it is safe to re-run.
+
+It prints the live `https://<worker>.<subdomain>.workers.dev` URL at the end.
+
+For production (requires `dayarampur.com` to already be a zone in the account,
+because of the custom-domain routes):
+
+```bash
+npm run cf:launch:production
+```
+
+### Plain redeploy
+
+Once the resources exist and `wrangler.jsonc` has real ids:
+
 ```bash
 npm run cf:deploy:staging
 npm run cf:deploy:production
 ```
 
-Before the first deploy of an environment:
-
-1. Create its D1 database and R2 bucket, and fill in the `database_id`.
-2. Apply migrations (`npm run db:migrate:staging` / `:production`).
-3. Set the secrets for that environment.
-4. Deploy.
-
-Full runbook: [`docs/deployment.md`](docs/deployment.md).
+Full runbook, rollback and monitoring: [`docs/deployment.md`](docs/deployment.md).
 
 ---
 

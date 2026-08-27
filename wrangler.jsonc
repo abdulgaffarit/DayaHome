@@ -23,6 +23,9 @@
   "observability": {
     "enabled": true
   },
+  // Gives every environment a *.workers.dev address, so the app is reachable
+  // before (and independently of) any custom domain.
+  "workers_dev": true,
 
   // ---- development (local `wrangler dev` / `vinext dev`) ----
   "vars": {
@@ -49,6 +52,7 @@
   "env": {
     "staging": {
       "name": "dayarampur-staging",
+      "workers_dev": true,
       "vars": {
         "APP_ENV": "staging",
         "NEXT_PUBLIC_SITE_URL": "https://staging.dayarampur.com",
@@ -72,6 +76,10 @@
     },
     "production": {
       "name": "dayarampur",
+      "workers_dev": true,
+      // Custom domains require dayarampur.com to already be a zone in this
+      // Cloudflare account. Until it is, deploy with --env staging (or comment
+      // these out) — the workers.dev address above works either way.
       "routes": [
         { "pattern": "dayarampur.com", "custom_domain": true },
         { "pattern": "www.dayarampur.com", "custom_domain": true }
