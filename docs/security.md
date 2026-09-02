@@ -142,13 +142,41 @@ and `.dev.vars` are git-ignored.
 
 ## Headers
 
-`securityHeaders()` sets CSP, `X-Content-Type-Options`, `Referrer-Policy`,
-`X-Frame-Options: DENY`, `Permissions-Policy` and HSTS. The CSP allows only what
-the app actually loads from outside its origin: Turnstile, Google Fonts and OSM
-tiles. `unsafe-inline` is permitted for styles only, never for scripts.
+`src/middleware.ts` applies `securityHeaders()` to every page and API response:
+CSP, HSTS, `X-Content-Type-Options: nosniff`, `Referrer-Policy`,
+`X-Frame-Options: DENY` and `Permissions-Policy`. Applying them in middleware
+rather than per-route means a new route cannot forget them, and
+`tests/security/headers.test.ts` fails if the middleware stops calling the
+function.
+
+The CSP allows only what the app actually loads from outside its origin:
+Turnstile, Google Fonts, OpenStreetMap tiles, and the SSLCOMMERZ form target.
+`connect-src` is `'self'` only — the contact endpoint is same-origin.
+
+**Known weakness:** `script-src` includes `'unsafe-inline'`. The framework emits
+inline bootstrap and RSC-payload scripts, and wiring per-request nonces through
+the renderer is not yet done. `securityHeaders({ nonce })` already emits a
+nonce-based policy, so the remaining work is generating a nonce per request and
+threading it into the rendered scripts. Until then the CSP is worth having for
+`frame-ancestors`, `object-src`, `base-uri`, `form-action` and transport
+hardening, but it is not an XSS backstop.
+
+CSP and HSTS are skipped on `localhost` — the dev server needs `eval` and a
+websocket for HMR, and HSTS on localhost would poison the browser for other
+local projects. Every other header applies everywhere.
+
+Verified on the production build in a real browser: zero CSP violations across
+the homepage, a category page, a listing page, login and a content page, and the
+authorized contact fetch still succeeds under `connect-src 'self'`.
 
 Responses carrying private data are `no-store, private`, keeping them out of
 shared caches and the back-forward cache.
+
+## Canonical host
+
+`dayarampur.com` and `www.dayarampur.com` are both attached to the Worker, so
+the middleware 308-redirects `www` to the apex. A 308 preserves the method, so a
+POST that lands on `www` is not silently downgraded to a GET.
 
 ## Audit log
 

@@ -126,9 +126,26 @@ npx vinext-cloudflare deploy --config dist/server/wrangler.json $ENV_FLAG
 
 # ---------------------------------------------------------------------------
 step "Done"
-cat <<NOTE
 
-The deploy output above prints the live URL (https://<worker>.<subdomain>.workers.dev).
+if [ "$ENVIRONMENT" = "production" ]; then
+  SITE_URL="https://dayarampur.com"
+  cat <<NOTE
+
+Live at $SITE_URL  (www.dayarampur.com 308-redirects to it).
+
+A brand-new custom domain can take a few minutes for its certificate to issue.
+Until it does, the workers.dev address printed in the deploy output above is
+already serving the same app.
+NOTE
+else
+  SITE_URL="the workers.dev URL printed above"
+  cat <<NOTE
+
+Live at $SITE_URL
+NOTE
+fi
+
+cat <<NOTE
 
 Next:
   1. Open it and check the homepage renders.
@@ -136,8 +153,8 @@ Next:
        npx wrangler d1 execute $DB_NAME --remote $ENV_FLAG \\
          --command "UPDATE users SET role='SUPER_ADMIN' WHERE phone='01XXXXXXXXX'"
   3. Set the IPN URL in the SSLCOMMERZ merchant panel to:
-       <your-url>/api/payments/sslcommerz/ipn
-  4. Set NEXT_PUBLIC_SITE_URL in wrangler.jsonc to the real URL and redeploy —
-     it drives canonical URLs, the sitemap and the payment callbacks.
+       $SITE_URL/api/payments/sslcommerz/ipn
+  4. Run one sandbox payment end to end. The live gateway handshake has never
+     been exercised — this is the last unverified path in the system.
 
 NOTE

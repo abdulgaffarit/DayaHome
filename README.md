@@ -331,14 +331,17 @@ Full runbook, rollback and monitoring: [`docs/deployment.md`](docs/deployment.md
 
 ## Custom domain
 
-In the Cloudflare dashboard, add `dayarampur.com` as a zone and point the
-nameservers at Cloudflare. The production routes in `wrangler.jsonc` already
-declare `dayarampur.com` and `www.dayarampur.com` as custom domains, so
-`wrangler deploy --env production` attaches them and provisions certificates.
+`dayarampur.com` is registered through Cloudflare Registrar, so the zone and
+nameservers are already in place — nothing to configure by hand.
 
-Set `NEXT_PUBLIC_SITE_URL` to `https://dayarampur.com` — it is the source of
-truth for canonical URLs, the sitemap, `robots.txt` and the payment
-callback URLs.
+The production config declares `dayarampur.com` and `www.dayarampur.com` as
+custom domains, so `npm run cf:launch:production` attaches both and provisions
+certificates. `www` then 308-redirects to the apex (see
+`src/middleware.ts`), keeping one canonical URL.
+
+`NEXT_PUBLIC_SITE_URL` is already `https://dayarampur.com` in the production
+vars — it is the source of truth for canonical URLs, the sitemap, `robots.txt`
+and the payment callback URLs.
 
 ---
 
