@@ -810,7 +810,7 @@ describe("foreign keys and deletion", () => {
   });
 
   it("deleting an unpaid campaign takes its creatives and statistics with it", async () => {
-    const { user, advertiser, campaign } = await anAdvertiserWithCampaign();
+    const { user, campaign } = await anAdvertiserWithCampaign();
     const now = nowIso();
 
     await execute(

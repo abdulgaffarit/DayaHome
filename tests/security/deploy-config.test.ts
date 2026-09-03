@@ -66,6 +66,9 @@ function generatedDevConfig() {
     r2_buckets: [
       { binding: "PROPERTY_IMAGES", bucket_name: "dayarampur-property-images-dev" },
     ],
+    // vinext carries `triggers` through from wrangler.jsonc, so a realistic
+    // fixture has them. The cron check is exercised deliberately below.
+    triggers: { crons: ["0 * * * *"] },
     definedEnvironments: ["staging", "production"],
   };
 }
@@ -232,6 +235,30 @@ describe("bindings that must never be missing", () => {
     const result = run(dir, ["production"]);
     expect(result.ok).toBe(false);
     expect(result.output).toContain("sandbox gateway");
+  });
+});
+
+describe("scheduled execution", () => {
+  it("REJECTS a config with no cron triggers", () => {
+    // The silent-failure shape: every request is served correctly while
+    // expired listings stay up and paid campaigns never start.
+    const dir = makeWorkspace({ ...generatedDevConfig(), triggers: { crons: [] } });
+    withRealDatabaseIds(dir);
+
+    const result = run(dir, ["production"]);
+
+    expect(result.ok).toBe(false);
+    expect(result.output).toMatch(/No cron triggers/i);
+  });
+
+  it("carries the cron triggers through into the prepared production config", () => {
+    const dir = makeWorkspace({ ...generatedDevConfig(), triggers: { crons: ["0 * * * *"] } });
+    withRealDatabaseIds(dir);
+
+    expect(run(dir, ["production"]).ok).toBe(true);
+
+    const prepared = JSON.parse(readFileSync(join(dir, "dist/server/wrangler.json"), "utf8"));
+    expect(prepared.triggers.crons).toContain("0 * * * *");
   });
 });
 

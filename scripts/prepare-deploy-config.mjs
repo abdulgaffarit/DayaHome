@@ -190,6 +190,27 @@ function validate(resolved, source, environment) {
     );
   }
 
+  // ---- 3b. Scheduled execution -------------------------------------------
+  // Listings and advertisement campaigns change state on a timer, not on a
+  // page view. A deploy that loses `triggers.crons` looks completely healthy:
+  // the site serves every request correctly while expired listings stay up and
+  // paid campaigns never start. Exactly the silent-failure shape this script
+  // exists to catch, so it is checked here rather than trusted.
+  const crons = resolved.triggers?.crons ?? [];
+  if (crons.length === 0) {
+    fail(
+      "No cron triggers in the resolved config — expired listings would never " +
+        "expire and scheduled campaigns would never start. Check `triggers.crons` " +
+        `in wrangler.jsonc (top level and env.${environment}).`,
+    );
+  } else {
+    const expectedCrons = expected.triggers?.crons ?? source.triggers?.crons ?? [];
+    const missing = expectedCrons.filter((c) => !crons.includes(c));
+    if (missing.length > 0) {
+      fail(`Cron triggers ${JSON.stringify(missing)} declared in wrangler.jsonc are missing`);
+    }
+  }
+
   // ---- 4. Values that would silently break the live site -------------------
   const siteUrl = resolved.vars?.NEXT_PUBLIC_SITE_URL ?? "";
   if (!siteUrl.startsWith("https://")) {

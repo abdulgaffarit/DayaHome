@@ -102,6 +102,24 @@ re-runs `requireAdmin()` / `requireSuperAdmin()` and writes to `admin_logs`.
 **A new category** — add it to `src/domain/categories.ts`, add a row in a new
 migration, and create `src/app/<slug>/page.tsx` from the existing template.
 
+**A new scheduled job** — add an entry to `SCHEDULED_JOBS` in
+`src/server/jobs/registry.ts`. It must be a status-conditional
+`UPDATE ... WHERE`, so that a repeat firing changes nothing: cron delivery is
+at-least-once and two runs can overlap. Never delete rows from a job. The
+Worker's `scheduled` handler in `src/worker.ts` picks it up automatically.
+
+## Scheduled execution
+
+`src/worker.ts` is the Worker entry, not `vinext/server/fetch-handler` — that
+one exports only `fetch`, and Cloudflare delivers cron triggers to a separate
+`scheduled` export. HTTP is delegated straight back to vinext.
+
+`triggers.crons` is declared at the top level of `wrangler.jsonc` **and** in each
+environment block, because `vinext build` flattens one environment into the
+generated config. `prepare-deploy-config.mjs` fails the deploy if the resolved
+config has no crons: a deploy that loses them serves every request perfectly
+while expired listings stay up and paid campaigns never start.
+
 ## Known gaps
 
 See [README → Implementation status](README.md#implementation-status). The two

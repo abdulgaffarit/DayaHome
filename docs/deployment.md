@@ -275,3 +275,56 @@ Before this is genuinely production-ready:
    headers, but no resized variants are produced. Cloudflare Images or a resize
    step on upload would cut mobile bandwidth substantially.
 7. **Run a penetration test** against staging before launch.
+
+## Scheduled jobs (cron triggers)
+
+Some marketplace state changes on a timer rather than on a request: a listing
+whose window closes, an advertisement campaign that starts or ends. These run
+as Cloudflare cron triggers, so they happen with nobody on the site.
+
+```
+wrangler.jsonc  triggers.crons: ["0 * * * *"]   (hourly, every environment)
+      ↓
+src/worker.ts   export default { fetch, scheduled }
+      ↓
+src/server/jobs/run.ts        runScheduledJobs(db)
+      ↓
+src/server/jobs/registry.ts   expire-properties, advertising-schedule
+```
+
+**Why a custom Worker entry.** `main` used to be
+`vinext/server/fetch-handler`, which exports only `fetch`. Cloudflare delivers
+cron triggers to a separate `scheduled` export, so there was nothing to deliver
+them to. `src/worker.ts` exports both and delegates every HTTP request straight
+back to vinext, unchanged.
+
+**Why crons are declared three times.** Once at the top level and once in each
+of `env.staging` and `env.production`. `vinext build` flattens a single
+environment into `dist/server/wrangler.json`; an environment block without its
+own `triggers` would contribute none. `prepare-deploy-config.mjs` refuses to
+deploy a resolved config with no crons — losing them is a silent failure that
+looks exactly like a healthy site with nothing expiring.
+
+**Safety properties.** Every job is a status-conditional `UPDATE ... WHERE`, so
+a duplicate firing changes zero rows and two overlapping runs cannot both apply
+the same transition. A job that throws is contained: the remaining jobs still
+run, and the invocation is then re-thrown so it registers as failed in the
+Cloudflare dashboard rather than looking healthy. Every run writes a `CRON_RUN`
+row to `admin_logs` with `admin_id` NULL.
+
+**Verifying locally.** `wrangler dev` normally exposes `/__scheduled`, but the
+generated config sets `no_bundle: true`, which skips the middleware that serves
+it. To exercise the handler against the real local D1:
+
+```bash
+npm run build
+node -e "const f='dist/server/wrangler.json',j=require('./'+f);delete j.no_bundle;
+  require('fs').writeFileSync('dist/server/wrangler.crontest.json',JSON.stringify(j))"
+npx wrangler dev --config dist/server/wrangler.crontest.json \
+  --test-scheduled --persist-to .wrangler/state
+curl "http://localhost:8787/__scheduled?cron=0+*+*+*+*"
+```
+
+`--persist-to .wrangler/state` matters: a config living under `dist/server/`
+otherwise gets its own empty D1 state directory beside it, and the jobs will
+report "no such table". The same applies to `npm run preview`.

@@ -11,7 +11,11 @@
   "name": "dayarampur",
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
-  "main": "vinext/server/fetch-handler",
+  // A custom entry rather than vinext's own `vinext/server/fetch-handler`,
+  // which exports only `fetch`. Cloudflare delivers cron triggers to a
+  // separate `scheduled` export, so the Worker needs an entry with both.
+  // src/worker.ts delegates every HTTP request straight back to vinext.
+  "main": "src/worker.ts",
   "assets": {
     "directory": "dist/client",
     "not_found_handling": "none",
@@ -26,6 +30,17 @@
   // Gives every environment a *.workers.dev address, so the app is reachable
   // before (and independently of) any custom domain.
   "workers_dev": true,
+
+  // Time-based marketplace jobs: expiring listings, and starting and ending
+  // advertisement campaigns. Hourly is well inside the tolerance for both —
+  // a listing that expires up to an hour late harms nobody — and every job is
+  // idempotent, so an extra firing is a no-op. See src/server/jobs/.
+  //
+  // Repeated in each environment below: `vinext build` flattens the config
+  // and an env block that omits `triggers` would otherwise inherit nothing.
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
 
   // ---- development (local `wrangler dev` / `vinext dev`) ----
   "vars": {
@@ -53,6 +68,9 @@
     "staging": {
       "name": "dayarampur-staging",
       "workers_dev": true,
+      "triggers": {
+        "crons": ["0 * * * *"]
+      },
       "vars": {
         "APP_ENV": "staging",
         "NEXT_PUBLIC_SITE_URL": "https://staging.dayarampur.com",
@@ -77,6 +95,9 @@
     "production": {
       "name": "dayarampur",
       "workers_dev": true,
+      "triggers": {
+        "crons": ["0 * * * *"]
+      },
       // Custom domains require dayarampur.com to already be a zone in this
       // Cloudflare account. Until it is, deploy with --env staging (or comment
       // these out) — the workers.dev address above works either way.
