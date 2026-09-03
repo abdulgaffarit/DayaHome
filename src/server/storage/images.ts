@@ -59,11 +59,11 @@ export function sniffImageType(bytes: Uint8Array): SniffResult {
  * user's filename survives, which removes path traversal and key-collision
  * concerns outright.
  */
-export function buildObjectKey(userId: string, ext: string): string {
+export function buildObjectKey(userId: string, ext: string, prefix = "properties"): string {
   const now = new Date();
   const yyyy = now.getUTCFullYear();
   const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
-  return `properties/${yyyy}/${mm}/${sanitizeSegment(userId)}/${newId()}.${ext}`;
+  return `${sanitizeSegment(prefix)}/${yyyy}/${mm}/${sanitizeSegment(userId)}/${newId()}.${ext}`;
 }
 
 /** Belt-and-braces: strip anything that could escape the key namespace. */
