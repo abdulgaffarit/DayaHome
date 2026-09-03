@@ -16,7 +16,7 @@
  *      partial unique index `contact_unlocks_active_uq`.
  */
 import type { AuthUser } from "@/server/auth/session";
-import type { PaymentProvider } from "./provider";
+import type { CreatePaymentResult, PaymentGateway } from "./gateway";
 import { batch, changes, execute, isUniqueViolation, queryOne } from "@/server/db/client";
 import { newId, newToken } from "@/lib/ids";
 import { nowIso } from "@/lib/time";
@@ -36,7 +36,16 @@ export type CreateUnlockPaymentResult =
   | { status: "OWN_PROPERTY" }
   | { status: "NOT_FOUND" }
   | { status: "GATEWAY_ERROR"; reason: string }
-  | { status: "REDIRECT"; redirectUrl: string; transactionId: string; paymentId: string };
+  | { status: "REDIRECT"; redirectUrl: string; transactionId: string; paymentId: string }
+  /** Manual gateway: the payer sends money out of band and quotes a reference. */
+  | {
+      status: "INSTRUCTIONS";
+      instructionsBn: string;
+      reference: string;
+      accountNumber?: string;
+      transactionId: string;
+      paymentId: string;
+    };
 
 interface PropertyForPayment {
   id: string;
@@ -53,11 +62,11 @@ export async function createUnlockPayment(
     propertyId: string;
     /** Server-side price. NEVER sourced from the request. */
     priceBdt: number;
-    provider: PaymentProvider;
+    gateway: PaymentGateway;
     urls: CreatePaymentUrls;
   },
 ): Promise<CreateUnlockPaymentResult> {
-  const { user, propertyId, priceBdt, provider, urls } = args;
+  const { user, propertyId, priceBdt, gateway, urls } = args;
 
   const property = await queryOne<PropertyForPayment>(
     db,
@@ -89,19 +98,23 @@ export async function createUnlockPayment(
   const unlockId = newId("unl");
   const now = nowIso();
 
+  const description = `যোগাযোগের তথ্য — ${property.title}`;
+
   await batch(db, [
     {
       sql: `INSERT INTO payments
-              (id, transaction_id, user_id, property_id, amount, currency, gateway, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
+              (id, transaction_id, user_id, property_id, payment_type, description,
+               amount, currency, gateway, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'PROPERTY_CONTACT_UNLOCK', ?, ?, ?, ?, 'PENDING', ?, ?)`,
       params: [
         paymentId,
         transactionId,
         user.id,
         propertyId,
+        description,
         priceBdt,
         CURRENCY,
-        provider.name,
+        gateway.id,
         now,
         now,
       ],
@@ -114,37 +127,58 @@ export async function createUnlockPayment(
     },
   ]);
 
-  const session = await provider.createSession({
-    transactionId,
-    amount: priceBdt,
-    currency: CURRENCY,
-    productName: `যোগাযোগের তথ্য — ${property.title}`.slice(0, 100),
-    productCategory: "contact-unlock",
-    customer: {
-      name: user.name,
-      email: user.email ?? `${user.id}@users.dayarampur.com`,
-      phone: user.phone ?? "01700000000",
-      address: "Dayarampur, Bagatipara, Natore",
-      city: "Natore",
-      country: "Bangladesh",
-    },
-    ...urls,
-    metadata: { userId: user.id, propertyId, paymentId },
-  });
+  let created: CreatePaymentResult;
+  try {
+    created = await gateway.createPayment({
+      transactionId,
+      amount: priceBdt,
+      currency: CURRENCY,
+      paymentType: "PROPERTY_CONTACT_UNLOCK",
+      description,
+      customer: {
+        name: user.name,
+        email: user.email ?? `${user.id}@users.dayarampur.com`,
+        phone: user.phone ?? "01700000000",
+        address: "Dayarampur, Bagatipara, Natore",
+        city: "Natore",
+        country: "Bangladesh",
+      },
+      successUrl: urls.successUrl,
+      failUrl: urls.failUrl,
+      cancelUrl: urls.cancelUrl,
+      webhookUrl: urls.ipnUrl,
+      metadata: { userId: user.id, propertyId, paymentId },
+    });
+  } catch (error) {
+    // An unconfigured gateway throws rather than pretending to take money.
+    console.error("[unlock] gateway rejected the request", error);
+    created = { kind: "FAILED", reason: "gateway_unavailable" };
+  }
 
-  if (!session.ok || !session.redirectUrl) {
+  if (created.kind === "FAILED") {
     await execute(
       db,
       `UPDATE payments SET status = 'FAILED', failure_reason = ?, updated_at = ?
         WHERE id = ? AND status = 'PENDING'`,
-      [session.failureReason ?? "session_failed", nowIso(), paymentId],
+      [created.reason, nowIso(), paymentId],
     );
-    return { status: "GATEWAY_ERROR", reason: session.failureReason ?? "session_failed" };
+    return { status: "GATEWAY_ERROR", reason: created.reason };
+  }
+
+  if (created.kind === "INSTRUCTIONS") {
+    return {
+      status: "INSTRUCTIONS",
+      instructionsBn: created.instructionsBn,
+      reference: created.reference,
+      accountNumber: created.accountNumber,
+      transactionId,
+      paymentId,
+    };
   }
 
   return {
     status: "REDIRECT",
-    redirectUrl: session.redirectUrl,
+    redirectUrl: created.redirectUrl,
     transactionId,
     paymentId,
   };
@@ -187,7 +221,7 @@ interface PaymentRow {
  */
 export async function settlePayment(
   db: D1Database,
-  provider: PaymentProvider,
+  gateway: PaymentGateway,
   args: {
     transactionId: string;
     validationId: string | null;
@@ -222,9 +256,9 @@ export async function settlePayment(
   // Authoritative server-to-server verification. Amount and currency come from
   // OUR payment row, so a gateway response for a different (cheaper) order
   // cannot settle this one.
-  const verification = await provider.verifyTransaction({
+  const verification = await gateway.verifyPayment({
+    transactionId: payment.transaction_id,
     validationId: args.validationId,
-    expectedTransactionId: payment.transaction_id,
     expectedAmount: payment.amount,
     expectedCurrency: payment.currency,
   });
@@ -360,6 +394,25 @@ async function markFailed(
       WHERE id = ? AND status = 'PENDING'`,
     [status, reason.slice(0, 200), nowIso(), paymentId],
   );
+}
+
+/**
+ * Which gateway took a payment.
+ *
+ * Callbacks must be verified by the gateway that created the payment, not by
+ * whichever gateway happens to be primary now — an administrator may have
+ * switched primaries since.
+ */
+export async function getPaymentGatewayId(
+  db: D1Database,
+  transactionId: string,
+): Promise<string | null> {
+  const row = await queryOne<{ gateway: string }>(
+    db,
+    `SELECT gateway FROM payments WHERE transaction_id = ?`,
+    [transactionId],
+  );
+  return row?.gateway ?? null;
 }
 
 /** Payment status for the return-URL page and the polling endpoint. */

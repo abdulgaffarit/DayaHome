@@ -3,7 +3,8 @@ import { contactUnlockPriceBdt, siteUrl } from "@/server/cloudflare/env";
 import { buildContext, requireAuth, requireSameOrigin } from "@/server/http/context";
 import { guarded, jsonError, jsonOk, validationError } from "@/server/http/responses";
 import { RATE_LIMITS, consumeRateLimit } from "@/server/security/rate-limit";
-import { getPaymentProvider } from "@/server/payments/factory";
+import { resolveGateway } from "@/server/payments/registry";
+import { isGatewayId } from "@/domain/payments";
 import { createUnlockPayment } from "@/server/payments/unlock-service";
 
 /**
@@ -29,11 +30,17 @@ export async function POST(request: Request) {
     const parsed = createPaymentSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) return validationError(parsed.error.flatten().fieldErrors);
 
-    let provider;
-    try {
-      provider = getPaymentProvider();
-    } catch (error) {
-      console.error("[payments] provider unavailable", error);
+    // The payer may name a gateway; the registry honours it only if that
+    // gateway is both enabled and actually configured, otherwise it falls
+    // through to the primary.
+    const requested = new URL(request.url).searchParams.get("gateway");
+    const resolution = await resolveGateway(
+      context.db,
+      context.env,
+      requested && isGatewayId(requested) ? requested : undefined,
+    );
+    if (!resolution.ok) {
+      console.error("[payments] no usable gateway is enabled and configured");
       return jsonError("SERVER_ERROR", "পেমেন্ট সেবা এই মুহূর্তে ব্যবহার করা যাচ্ছে না।");
     }
 
@@ -42,7 +49,7 @@ export async function POST(request: Request) {
       user: context.user!,
       propertyId: parsed.data.propertyId,
       priceBdt: contactUnlockPriceBdt(),
-      provider,
+      gateway: resolution.gateway,
       urls: {
         successUrl: `${base}/api/payments/sslcommerz/return?outcome=success`,
         failUrl: `${base}/api/payments/sslcommerz/return?outcome=fail`,
@@ -54,6 +61,17 @@ export async function POST(request: Request) {
     switch (result.status) {
       case "REDIRECT":
         return jsonOk({ ok: true, redirectUrl: result.redirectUrl, transactionId: result.transactionId });
+      case "INSTRUCTIONS":
+        // Manual gateway: nothing to redirect to. The payer sends money out of
+        // band and an administrator confirms it.
+        return jsonOk({
+          ok: true,
+          manual: true,
+          instructionsBn: result.instructionsBn,
+          reference: result.reference,
+          accountNumber: result.accountNumber,
+          transactionId: result.transactionId,
+        });
       case "ALREADY_UNLOCKED":
         // No second charge for a property this user already paid for.
         return jsonOk({ ok: true, alreadyUnlocked: true });

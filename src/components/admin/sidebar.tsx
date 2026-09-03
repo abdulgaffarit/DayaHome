@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Unlock,
   Users,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -32,7 +33,8 @@ const ITEMS: Item[] = [
   { href: "/admin/properties/pending", label: "অনুমোদনের অপেক্ষায়", icon: ClipboardList, badgeKey: "pending" },
   { href: "/admin/properties", label: "সব বিজ্ঞাপন", icon: ListChecks, exact: true },
   { href: "/admin/users", label: "ব্যবহারকারী", icon: Users },
-  { href: "/admin/payments", label: "পেমেন্ট", icon: CreditCard },
+  { href: "/admin/payments", label: "পেমেন্ট", icon: CreditCard, exact: true },
+  { href: "/admin/payments/gateways", label: "পেমেন্ট গেটওয়ে", icon: Wallet, superAdminOnly: true },
   { href: "/admin/unlocks", label: "আনলক", icon: Unlock },
   { href: "/admin/reports", label: "রিপোর্ট", icon: Flag, badgeKey: "reports" },
   { href: "/admin/logs", label: "অ্যাডমিন লগ", icon: ScrollText },

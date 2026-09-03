@@ -25,6 +25,8 @@ import {
 } from "./moderation";
 import { changeUserRole, setUserStatus } from "./users";
 import { recordRefund } from "./payments";
+import { setGatewayEnabled, setGatewayRole, updateGatewaySettings } from "./gateways";
+import { isGatewayId } from "@/domain/payments";
 import { setReportStatus } from "@/server/properties/reports";
 import { recordAdminAction } from "./audit";
 
@@ -252,4 +254,60 @@ export async function updateSettingAction(formData: FormData): Promise<ActionRes
 
   revalidatePath("/admin/settings");
   return { ok: true };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Payment gateways                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Gateway configuration is SUPER_ADMIN-only: switching the primary gateway
+ * changes where every payment on the site is routed.
+ */
+export async function setGatewayEnabledAction(formData: FormData): Promise<ActionResult> {
+  const admin = await requireSuperAdmin();
+  const gatewayId = String(formData.get("gatewayId") ?? "");
+  const enabled = String(formData.get("enabled") ?? "") === "true";
+  if (!isGatewayId(gatewayId)) return { ok: false, message: "গেটওয়ে সঠিক নয়।" };
+
+  const result = await setGatewayEnabled(getDb(), admin.id, gatewayId, enabled, {
+    ipHash: await adminIpHash(),
+  });
+  revalidatePath("/admin/payments/gateways");
+  return result.ok ? { ok: true } : { ok: false, message: "পরিবর্তন করা যায়নি।" };
+}
+
+export async function setGatewayRoleAction(formData: FormData): Promise<ActionResult> {
+  const admin = await requireSuperAdmin();
+  const gatewayId = String(formData.get("gatewayId") ?? "");
+  const role = String(formData.get("role") ?? "");
+  if (!isGatewayId(gatewayId) || (role !== "primary" && role !== "fallback")) {
+    return { ok: false, message: "অনুরোধটি সঠিক নয়।" };
+  }
+
+  const result = await setGatewayRole(getDb(), admin.id, gatewayId, role, {
+    ipHash: await adminIpHash(),
+  });
+  revalidatePath("/admin/payments/gateways");
+  return result.ok ? { ok: true } : { ok: false, message: "পরিবর্তন করা যায়নি।" };
+}
+
+export async function updateGatewaySettingsAction(formData: FormData): Promise<ActionResult> {
+  const admin = await requireSuperAdmin();
+  const gatewayId = String(formData.get("gatewayId") ?? "");
+  if (!isGatewayId(gatewayId)) return { ok: false, message: "গেটওয়ে সঠিক নয়।" };
+
+  const settings: Record<string, string> = {};
+  for (const [key, value] of formData.entries()) {
+    if (key !== "gatewayId" && typeof value === "string") settings[key] = value;
+  }
+
+  const result = await updateGatewaySettings(getDb(), admin.id, gatewayId, settings, {
+    ipHash: await adminIpHash(),
+  });
+  revalidatePath("/admin/payments/gateways");
+  return result.ok
+    ? { ok: true }
+    : { ok: false, message: "এই গেটওয়ের কোনো সম্পাদনাযোগ্য সেটিং নেই।" };
 }

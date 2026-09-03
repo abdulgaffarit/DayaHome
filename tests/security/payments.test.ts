@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDb } from "../helpers/d1";
 import { createPendingPayment, createProperty, createUser, grantUnlock } from "../helpers/factories";
-import { FakeProvider } from "../helpers/fake-provider";
+import { FakeGateway } from "../helpers/fake-gateway";
 import { createUnlockPayment, settlePayment } from "@/server/payments/unlock-service";
 import { hasActiveUnlock } from "@/server/properties/contact";
 import { queryOne } from "@/server/db/client";
@@ -35,7 +35,7 @@ describe("payment creation", () => {
   it("CRITICAL: the charged amount comes from the server, not from the caller", async () => {
     const user = await createUser(ctx.db);
     const property = await createProperty(ctx.db);
-    const provider = new FakeProvider();
+    const provider = new FakeGateway();
 
     // Simulates a tampered client that has tried to set its own price. The
     // service signature has no channel for it: the only price it accepts is the
@@ -44,13 +44,13 @@ describe("payment creation", () => {
       user,
       propertyId: property.id,
       priceBdt: SERVER_PRICE,
-      provider,
+      gateway: provider,
       urls: URLS,
     });
 
-    expect(provider.sessions).toHaveLength(1);
-    expect(provider.sessions[0].amount).toBe(SERVER_PRICE);
-    expect(provider.sessions[0].currency).toBe("BDT");
+    expect(provider.created).toHaveLength(1);
+    expect(provider.created[0].amount).toBe(SERVER_PRICE);
+    expect(provider.created[0].currency).toBe("BDT");
 
     const stored = await queryOne<{ amount: number; currency: string; status: string }>(
       ctx.db,
@@ -65,18 +65,18 @@ describe("payment creation", () => {
     const property = await createProperty(ctx.db);
     await grantUnlock(ctx.db, user.id, property.id);
 
-    const provider = new FakeProvider();
+    const provider = new FakeGateway();
     const result = await createUnlockPayment(ctx.db, {
       user,
       propertyId: property.id,
       priceBdt: SERVER_PRICE,
-      provider,
+      gateway: provider,
       urls: URLS,
     });
 
     expect(result.status).toBe("ALREADY_UNLOCKED");
     // No gateway session is created at all, so no second charge is possible.
-    expect(provider.sessions).toHaveLength(0);
+    expect(provider.created).toHaveLength(0);
   });
 
   it("refuses payment for a listing that is not publicly visible", async () => {
@@ -87,7 +87,7 @@ describe("payment creation", () => {
       user,
       propertyId: hidden.id,
       priceBdt: SERVER_PRICE,
-      provider: new FakeProvider(),
+      gateway: new FakeGateway(),
       urls: URLS,
     });
 
@@ -102,7 +102,7 @@ describe("payment creation", () => {
       user: owner,
       propertyId: property.id,
       priceBdt: SERVER_PRICE,
-      provider: new FakeProvider(),
+      gateway: new FakeGateway(),
       urls: URLS,
     });
 
@@ -117,7 +117,7 @@ describe("payment creation", () => {
       user,
       propertyId: property.id,
       priceBdt: SERVER_PRICE,
-      provider: new FakeProvider({ sessionOk: false }),
+      gateway: new FakeGateway({ createOk: false }),
       urls: URLS,
     });
 
@@ -137,7 +137,7 @@ describe("settlement", () => {
     const property = await createProperty(ctx.db);
     await createPendingPayment(ctx.db, user.id, property.id, "TXN-1");
 
-    const provider = new FakeProvider();
+    const provider = new FakeGateway();
     const outcome = await settlePayment(ctx.db, provider, {
       transactionId: "TXN-1",
       validationId: "VAL-1",
@@ -146,7 +146,7 @@ describe("settlement", () => {
     expect(outcome.result).toBe("SETTLED");
     // The gateway was asked to confirm OUR amount and OUR transaction id.
     expect(provider.verifications[0]).toMatchObject({
-      expectedTransactionId: "TXN-1",
+      transactionId: "TXN-1",
       expectedAmount: 50,
       expectedCurrency: "BDT",
     });
@@ -158,7 +158,7 @@ describe("settlement", () => {
     const property = await createProperty(ctx.db);
     await createPendingPayment(ctx.db, user.id, property.id, "TXN-DUP");
 
-    const provider = new FakeProvider();
+    const provider = new FakeGateway();
     const first = await settlePayment(ctx.db, provider, {
       transactionId: "TXN-DUP",
       validationId: "VAL-DUP",
@@ -198,11 +198,11 @@ describe("settlement", () => {
     await createPendingPayment(ctx.db, user.id, property.id, "TXN-CHEAP");
 
     // The gateway reports the transaction as valid but for ৳1 rather than ৳50.
-    const provider = new FakeProvider({
+    const provider = new FakeGateway({
       verify: (args) => ({
         verified: false,
         status: "VALID",
-        transactionId: args.expectedTransactionId,
+        transactionId: args.transactionId,
         amount: 1,
         currency: "BDT",
         failureReason: "amount_mismatch",
@@ -223,7 +223,7 @@ describe("settlement", () => {
     const property = await createProperty(ctx.db);
     await createPendingPayment(ctx.db, user.id, property.id, "TXN-NOVAL");
 
-    const outcome = await settlePayment(ctx.db, new FakeProvider(), {
+    const outcome = await settlePayment(ctx.db, new FakeGateway(), {
       transactionId: "TXN-NOVAL",
       validationId: null,
     });
@@ -233,7 +233,7 @@ describe("settlement", () => {
   });
 
   it("an unknown transaction id settles nothing", async () => {
-    const outcome = await settlePayment(ctx.db, new FakeProvider(), {
+    const outcome = await settlePayment(ctx.db, new FakeGateway(), {
       transactionId: "TXN-NEVER-EXISTED",
       validationId: "VAL-X",
     });
@@ -245,7 +245,7 @@ describe("settlement", () => {
     const property = await createProperty(ctx.db);
     await createPendingPayment(ctx.db, user.id, property.id, "TXN-FAIL");
 
-    const provider = new FakeProvider({
+    const provider = new FakeGateway({
       verify: () => ({ verified: false, status: "FAILED", failureReason: "declined" }),
     });
     const outcome = await settlePayment(ctx.db, provider, {
@@ -267,7 +267,7 @@ describe("settlement", () => {
     const property = await createProperty(ctx.db);
     await createPendingPayment(ctx.db, user.id, property.id, "TXN-SLOW");
 
-    const pendingProvider = new FakeProvider({
+    const pendingProvider = new FakeGateway({
       verify: () => ({ verified: false, status: "PENDING" }),
     });
     await settlePayment(ctx.db, pendingProvider, {
@@ -283,7 +283,7 @@ describe("settlement", () => {
     expect(afterFirst?.status).toBe("PENDING");
 
     // The real IPN arrives later and settles it.
-    const outcome = await settlePayment(ctx.db, new FakeProvider(), {
+    const outcome = await settlePayment(ctx.db, new FakeGateway(), {
       transactionId: "TXN-SLOW",
       validationId: "VAL-SLOW",
     });

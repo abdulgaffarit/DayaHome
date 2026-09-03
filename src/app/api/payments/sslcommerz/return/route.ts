@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { getDb } from "@/server/cloudflare/env";
-import { getPaymentProvider } from "@/server/payments/factory";
-import { settlePayment } from "@/server/payments/unlock-service";
+import { getEnv } from "@/server/cloudflare/env";
+import { gatewayForPayment } from "@/server/payments/registry";
+import { getPaymentGatewayId, settlePayment } from "@/server/payments/unlock-service";
 
 /**
  * The browser's return leg from the gateway.
@@ -39,12 +40,19 @@ async function handleReturn(request: Request): Promise<never> {
   }
 
   try {
-    const provider = getPaymentProvider();
-    const result = await settlePayment(getDb(), provider, {
+    const db = getDb();
+    // Settle through the gateway that created the payment.
+    const gatewayId = await getPaymentGatewayId(db, transactionId);
+    const gateway = gatewayId ? await gatewayForPayment(db, getEnv(), gatewayId) : null;
+    if (!gateway) {
+      redirect(`/payment/result?status=pending&tran=${encodeURIComponent(transactionId)}`);
+    }
+
+    const result = await settlePayment(db, gateway, {
       transactionId,
       validationId,
       rawPayload: payload,
-      signatureVerified: provider.verifySignature(payload),
+      signatureVerified: gateway.verifyWebhookSignature(payload),
     });
 
     if (result.result === "SETTLED" || result.result === "ALREADY_SETTLED") {
