@@ -17,7 +17,7 @@
  */
 import type { EmailProvider } from "@/server/email/provider";
 import { changes, execute, queryOne } from "@/server/db/client";
-import { newId, newToken, sha256Hex } from "@/lib/ids";
+import { newToken, sha256Hex } from "@/lib/ids";
 import { HOUR, isoPlus, nowIso } from "@/lib/time";
 import { hashPassword } from "./password";
 import { destroyAllSessions } from "./session";
