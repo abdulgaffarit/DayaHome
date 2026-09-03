@@ -153,3 +153,53 @@ export async function createPendingPayment(
 
   return { paymentId, unlockId };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Advertising                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/** An advertiser profile for `userId`, created through the real service. */
+export async function createAdvertiserFor(
+  db: D1Database,
+  userId: string,
+  overrides: Partial<{ businessName: string; status: string }> = {},
+): Promise<{ id: string }> {
+  const { createAdvertiser } = await import("@/server/advertising/advertisers");
+  const result = await createAdvertiser(db, userId, {
+    businessName: overrides.businessName ?? "দয়ারামপুর ইলেকট্রনিক্স",
+    contactPerson: "মোঃ পরীক্ষা",
+    businessPhone: "01800000001",
+  });
+  if (!result.ok) throw new Error(`advertiser factory failed: ${result.reason}`);
+
+  if (overrides.status && overrides.status !== "PENDING") {
+    await execute(db, `UPDATE advertisers SET status = ? WHERE id = ?`, [
+      overrides.status,
+      result.advertiser.id,
+    ]);
+  }
+  return { id: result.advertiser.id };
+}
+
+/** A DRAFT campaign, priced from the package exactly as production does. */
+export async function createDraftCampaign(
+  db: D1Database,
+  advertiserId: string,
+  overrides: Partial<{ zoneId: string; packageId: string; title: string; requestedStartAt: string }> = {},
+): Promise<{ id: string; publicRef: number; priceBdt: number }> {
+  const { createCampaign } = await import("@/server/advertising/campaigns");
+  const result = await createCampaign(db, {
+    advertiserId,
+    zoneId: overrides.zoneId ?? "zone_home_top",
+    packageId: overrides.packageId ?? "adpkg_basic",
+    title: overrides.title ?? "পরীক্ষামূলক ব্যানার",
+    destinationUrl: "https://example.test/shop",
+    requestedStartAt: overrides.requestedStartAt ?? null,
+  });
+  if (!result.ok) throw new Error(`campaign factory failed: ${result.reason}`);
+  return {
+    id: result.campaign.id,
+    publicRef: result.campaign.public_ref,
+    priceBdt: result.campaign.price_bdt,
+  };
+}

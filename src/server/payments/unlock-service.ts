@@ -21,6 +21,7 @@ import { batch, changes, execute, isUniqueViolation, queryOne } from "@/server/d
 import { newId, newToken } from "@/lib/ids";
 import { nowIso } from "@/lib/time";
 import { notify } from "@/server/notifications/notify";
+import { onCampaignPaymentSettled } from "@/server/advertising/payments";
 
 export const CURRENCY = "BDT";
 
@@ -198,8 +199,9 @@ function buildTransactionId(publicRef: number): string {
 /* -------------------------------------------------------------------------- */
 
 export type SettleOutcome =
-  | { result: "SETTLED"; paymentId: string; propertyId: string; userId: string }
-  | { result: "ALREADY_SETTLED"; paymentId: string; propertyId: string; userId: string }
+  /** `propertyId` is null for an advertising or subscription payment. */
+  | { result: "SETTLED"; paymentId: string; propertyId: string | null; userId: string }
+  | { result: "ALREADY_SETTLED"; paymentId: string; propertyId: string | null; userId: string }
   | { result: "REJECTED"; reason: string; paymentId?: string }
   | { result: "UNKNOWN_TRANSACTION" };
 
@@ -207,7 +209,11 @@ interface PaymentRow {
   id: string;
   transaction_id: string;
   user_id: string;
-  property_id: string;
+  /** Null for an advertising or subscription payment. */
+  property_id: string | null;
+  /** Set only for an advertising payment. */
+  advertisement_id: string | null;
+  payment_type: string;
   amount: number;
   currency: string;
   status: string;
@@ -233,7 +239,8 @@ export async function settlePayment(
 ): Promise<SettleOutcome> {
   const payment = await queryOne<PaymentRow>(
     db,
-    `SELECT id, transaction_id, user_id, property_id, amount, currency, status
+    `SELECT id, transaction_id, user_id, property_id, advertisement_id, payment_type,
+            amount, currency, status
        FROM payments WHERE transaction_id = ?`,
     [args.transactionId],
   );
@@ -332,17 +339,35 @@ export async function settlePayment(
     };
   }
 
-  await activateUnlock(db, payment, now);
+  // What a settled payment DELIVERS depends on what was bought. Verification
+  // and the idempotency gate above are shared by every payment type; only this
+  // step differs.
+  if (isAdvertisingPayment(payment.payment_type) && payment.advertisement_id) {
+    // Deliberately advances the campaign only as far as the review queue.
+    await onCampaignPaymentSettled(db, payment.advertisement_id, payment.id);
 
-  await notify(db, {
-    userId: payment.user_id,
-    type: "PAYMENT_SUCCESSFUL",
-    titleBn: "পেমেন্ট সফল হয়েছে",
-    bodyBn: `৳${payment.amount} পেমেন্ট গ্রহণ করা হয়েছে। এখন মালিকের যোগাযোগের তথ্য দেখতে পারবেন।`,
-    link: `/dashboard/unlocked`,
-    entityType: "payment",
-    entityId: payment.id,
-  });
+    await notify(db, {
+      userId: payment.user_id,
+      type: "PAYMENT_SUCCESSFUL",
+      titleBn: "পেমেন্ট সফল হয়েছে",
+      bodyBn: `৳${payment.amount} পেমেন্ট গ্রহণ করা হয়েছে। আপনার বিজ্ঞাপনটি এখন পর্যালোচনার অপেক্ষায় আছে।`,
+      link: `/advertiser/campaigns`,
+      entityType: "payment",
+      entityId: payment.id,
+    });
+  } else {
+    await activateUnlock(db, payment, now);
+
+    await notify(db, {
+      userId: payment.user_id,
+      type: "PAYMENT_SUCCESSFUL",
+      titleBn: "পেমেন্ট সফল হয়েছে",
+      bodyBn: `৳${payment.amount} পেমেন্ট গ্রহণ করা হয়েছে। এখন মালিকের যোগাযোগের তথ্য দেখতে পারবেন।`,
+      link: `/dashboard/unlocked`,
+      entityType: "payment",
+      entityId: payment.id,
+    });
+  }
 
   return {
     result: "SETTLED",
@@ -352,7 +377,15 @@ export async function settlePayment(
   };
 }
 
+function isAdvertisingPayment(paymentType: string): boolean {
+  return paymentType === "ADVERTISEMENT" || paymentType === "ADVERTISEMENT_RENEWAL";
+}
+
 async function activateUnlock(db: D1Database, payment: PaymentRow, now: string): Promise<void> {
+  // Defensive: a property payment always has a property_id, but an unlock must
+  // never be minted from a row that lacks one.
+  if (!payment.property_id) return;
+
   try {
     await batch(db, [
       {
