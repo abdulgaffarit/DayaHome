@@ -7,6 +7,95 @@ production data is never touched by local development.
 All three set `workers_dev: true`, so every environment has a working
 `*.workers.dev` address independently of any custom domain.
 
+## How an environment is selected
+
+**Read this before changing anything about deployment.**
+
+### The trap
+
+`vinext build` writes two things:
+
+* `dist/server/wrangler.json` — the build's own Wrangler config, with the
+  **top-level (development)** environment flattened into it and the `env` block
+  **removed**.
+* `.wrangler/deploy/config.json` — a Wrangler
+  [redirected configuration](https://developers.cloudflare.com/workers/wrangler/configuration/#redirected-configurations)
+  pointing at that file.
+
+When the redirect file exists, Wrangler **ignores `wrangler.jsonc` entirely**
+and uses the generated config. That config defines no environments, so:
+
+```
+wrangler deploy --env production     # ← matches nothing, falls back to dev
+```
+
+It does not warn. It does not fail. It deploys the Worker bound to
+`dayarampur-dev`, `dayarampur-property-images-dev`, `APP_ENV=development` and
+`NEXT_PUBLIC_SITE_URL=http://localhost:3000` — which would break canonical URLs,
+the sitemap, `robots.txt` and every payment callback, while looking like a
+successful deploy. `--env staging` fails the same way.
+
+### The fix
+
+The deploy path never passes `--env`. Instead:
+
+```
+npm run build
+node scripts/prepare-deploy-config.mjs production          # resolve
+node scripts/prepare-deploy-config.mjs production --verify # re-check
+wrangler deploy --config dist/server/wrangler.json         # deploy that file
+```
+
+`prepare-deploy-config.mjs` merges `env.production` from `wrangler.jsonc` (the
+source of truth) into the generated config, deletes the `env` and
+`definedEnvironments` keys so nothing is left for `--env` to select, stamps
+`__preparedFor`, and then refuses to continue unless the result genuinely is
+that environment.
+
+`--verify` re-runs the assertions against the file on disk without rewriting it,
+as a last gate immediately before the upload.
+
+### What it refuses to deploy
+
+| Check | Why |
+|---|---|
+| D1 binding is the dev database | The exact silent-fallback bug above |
+| R2 binding is the dev bucket | Same |
+| `APP_ENV` is `development` | Same |
+| Name / database / bucket differ from `wrangler.jsonc` | Config drift |
+| `database_id` is the `00000000-…` placeholder | Binds a database that does not exist |
+| `DB`, `PROPERTY_IMAGES` or `assets` binding missing | The app cannot serve a page |
+| `NEXT_PUBLIC_SITE_URL` is not `https://…` | Breaks canonicals, sitemap, payment callbacks |
+| `CONTACT_UNLOCK_PRICE_BDT` unset | The unlock price must come from configuration |
+| Production with `SSLCOMMERZ_IS_SANDBOX != "false"` | Real payments would go to the sandbox |
+| Production missing the `dayarampur.com` route | The domain would not be attached |
+| An `env` block survived into the resolved config | `--env` could still re-resolve |
+
+`tests/security/deploy-config.test.ts` drives the script as a subprocess against
+fixture configs and asserts each refusal, so the regression cannot return
+silently.
+
+### Which config each command uses
+
+Every Wrangler command names its config explicitly. Without `--config`, a stale
+`.wrangler/deploy/config.json` left by an earlier build silently changes what
+the command resolves.
+
+| Command | Config | Environment selected by |
+|---|---|---|
+| `npm run dev` | `wrangler.jsonc` (top level) | Vite plugin; always development |
+| `npm run db:migrate` | `wrangler.jsonc` | Top level (development) |
+| `npm run db:migrate:staging` | `wrangler.jsonc` | `--env staging` — safe, because `--config` defeats the redirect and migrations need no entry point |
+| `npm run db:migrate:production` | `wrangler.jsonc` | `--env production` |
+| `npm run cf:deploy:staging` | `dist/server/wrangler.json` | Already resolved by the prepare step — no `--env` |
+| `npm run cf:deploy:production` | `dist/server/wrangler.json` | Same |
+| `wrangler secret put` | — | `--name <worker>`, which bypasses config resolution entirely |
+
+`wrangler deploy --config wrangler.jsonc` does **not** work: the source config's
+`main` is `vinext/server/fetch-handler`, which only exists inside the build. The
+redirect is why vinext generates its own config in the first place — the fix is
+to make that generated config correct, not to bypass it.
+
 ## The short version
 
 ```bash
@@ -74,11 +163,26 @@ npm run cf:deploy:production
 ```bash
 npm run verify                 # typecheck + lint + test — all must pass
 npm run db:migrate:staging
-npm run cf:deploy:staging
+npm run cf:deploy:staging      # build → resolve staging → verify → deploy
 # smoke-test staging, then:
 npm run db:migrate:production
 npm run cf:deploy:production
 ```
+
+Both `cf:deploy:*` scripts print the environment they resolved before uploading:
+
+```
+  Deploy configuration resolved for: PRODUCTION
+
+    worker name   dayarampur
+    D1 database   dayarampur-production  (…)
+    R2 bucket     dayarampur-property-images
+    APP_ENV       production
+    site URL      https://dayarampur.com
+```
+
+Read that block. If it does not say what you expect, the deploy has not happened
+yet — nothing is uploaded until after the check passes.
 
 Migrations run **before** the deploy that needs them, and must be
 backwards-compatible with the currently-deployed Worker for the window between
@@ -86,6 +190,8 @@ the two steps.
 
 ## Staging smoke test
 
+- [ ] The deploy printed `Deploy configuration resolved for: STAGING` with the
+      staging database and bucket — not the dev ones
 - [ ] Homepage renders with listings
 - [ ] A category page filters, sorts and paginates
 - [ ] A property page shows the locked contact panel

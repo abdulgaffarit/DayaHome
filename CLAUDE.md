@@ -71,6 +71,22 @@ almost never to edit the test.
    one deliberate exception, documented in place.
 7. Uploads are validated by magic bytes; object keys are server-generated.
 
+## Deployment: never pass `--env`
+
+`vinext build` writes `.wrangler/deploy/config.json`, a Wrangler redirected
+configuration. Wrangler then ignores `wrangler.jsonc` and uses
+`dist/server/wrangler.json`, which vinext flattens from the **development**
+environment with the `env` block dropped. So `wrangler deploy --env production`
+silently resolves the dev D1 database, dev R2 bucket and a localhost site URL,
+and reports success.
+
+Deploys therefore go through `scripts/prepare-deploy-config.mjs <env>`, which
+merges the env block into the generated config and refuses to continue unless
+the result really is that environment. Deploy the resolved file with no `--env`.
+
+Every Wrangler command in `package.json` names its `--config` explicitly for the
+same reason. See [`docs/deployment.md`](docs/deployment.md#how-an-environment-is-selected).
+
 ## Adding things
 
 **A new page under `/dashboard` or `/admin`** — the layout already guards it;

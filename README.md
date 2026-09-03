@@ -325,6 +325,12 @@ npm run cf:deploy:staging
 npm run cf:deploy:production
 ```
 
+Each prints the environment it resolved — worker name, D1 database, R2 bucket,
+`APP_ENV`, site URL — and refuses to upload if that is not genuinely the
+environment you asked for. `--env` is deliberately never used; see
+[how an environment is selected](docs/deployment.md#how-an-environment-is-selected)
+for why it cannot be trusted with this toolchain.
+
 Full runbook, rollback and monitoring: [`docs/deployment.md`](docs/deployment.md).
 
 ---

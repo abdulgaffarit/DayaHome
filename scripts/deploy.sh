@@ -20,12 +20,12 @@ case "$ENVIRONMENT" in
   staging)
     DB_NAME="dayarampur-staging"
     BUCKET="dayarampur-property-images-staging"
-    ENV_FLAG="--env staging"
+    WORKER_NAME="dayarampur-staging"
     ;;
   production)
     DB_NAME="dayarampur-production"
     BUCKET="dayarampur-property-images"
-    ENV_FLAG="--env production"
+    WORKER_NAME="dayarampur"
     ;;
   *)
     echo "usage: sh scripts/deploy.sh [staging|production]" >&2
@@ -33,10 +33,16 @@ case "$ENVIRONMENT" in
     ;;
 esac
 
+# The one config every Cloudflare command in this script points at.
+DEPLOY_CONFIG="dist/server/wrangler.json"
+
 step() { printf '\n\033[1;32m==>\033[0m \033[1m%s\033[0m\n' "$1"; }
 warn() { printf '\033[1;33m !\033[0m %s\n' "$1"; }
 
 # ---------------------------------------------------------------------------
+step "Verifying (typecheck, lint, tests)"
+npm run verify
+
 step "Checking Cloudflare authentication"
 if ! npx wrangler whoami >/dev/null 2>&1; then
   echo "Not logged in. Run:  npx wrangler login" >&2
@@ -83,8 +89,23 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+step "Building"
+npm run build
+
+# `vinext build` emits dist/server/wrangler.json with the DEVELOPMENT
+# environment flattened in and the `env` block dropped, plus a Wrangler
+# "redirected configuration" pointer. Wrangler then ignores wrangler.jsonc, so
+# `--env production` silently matches nothing and falls back to the dev
+# bindings. This step rewrites that file to be the requested environment and
+# refuses to continue if the result is not genuinely that environment.
+step "Resolving deploy configuration for $ENVIRONMENT"
+node scripts/prepare-deploy-config.mjs "$ENVIRONMENT"
+
+# ---------------------------------------------------------------------------
 step "Checking required secrets"
-EXISTING_SECRETS="$(npx wrangler secret list $ENV_FLAG 2>/dev/null || echo '[]')"
+# `--name` addresses the Worker directly. Using `--env` here would be subject
+# to the same redirected-config problem that this script exists to solve.
+EXISTING_SECRETS="$(npx wrangler secret list --name "$WORKER_NAME" 2>/dev/null || echo '[]')"
 MISSING=""
 for SECRET in SESSION_SECRET SSLCOMMERZ_STORE_ID SSLCOMMERZ_STORE_PASSWORD; do
   case "$EXISTING_SECRETS" in
@@ -98,9 +119,9 @@ if [ -n "$MISSING" ]; then
   for SECRET in $MISSING; do
     if [ "$SECRET" = "SESSION_SECRET" ]; then
       echo "    node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\" \\"
-      echo "      | npx wrangler secret put SESSION_SECRET $ENV_FLAG"
+      echo "      | npx wrangler secret put SESSION_SECRET --name $WORKER_NAME"
     else
-      echo "    npx wrangler secret put $SECRET $ENV_FLAG"
+      echo "    npx wrangler secret put $SECRET --name $WORKER_NAME"
     fi
   done
   echo
@@ -110,19 +131,17 @@ if [ -n "$MISSING" ]; then
   case "$REPLY" in [yY]*) ;; *) exit 1 ;; esac
 fi
 
-# ---------------------------------------------------------------------------
 step "Applying database migrations"
-npx wrangler d1 migrations apply "$DB_NAME" --remote $ENV_FLAG
+npx wrangler d1 migrations apply "$DB_NAME" --config "$DEPLOY_CONFIG" --remote
 
 # ---------------------------------------------------------------------------
-step "Verifying (typecheck, lint, tests)"
-npm run verify
-
-step "Building"
-npm run build
+step "Final check — the config really is $ENVIRONMENT"
+node scripts/prepare-deploy-config.mjs "$ENVIRONMENT" --verify
 
 step "Deploying to $ENVIRONMENT"
-npx vinext-cloudflare deploy --config dist/server/wrangler.json $ENV_FLAG
+# No --env: the config IS this environment, so there is nothing to select and
+# nothing to fall back to.
+npx wrangler deploy --config "$DEPLOY_CONFIG"
 
 # ---------------------------------------------------------------------------
 step "Done"
@@ -150,7 +169,7 @@ cat <<NOTE
 Next:
   1. Open it and check the homepage renders.
   2. Register an account, then promote it to SUPER_ADMIN:
-       npx wrangler d1 execute $DB_NAME --remote $ENV_FLAG \\
+       npx wrangler d1 execute $DB_NAME --config $DEPLOY_CONFIG --remote \\
          --command "UPDATE users SET role='SUPER_ADMIN' WHERE phone='01XXXXXXXXX'"
   3. Set the IPN URL in the SSLCOMMERZ merchant panel to:
        $SITE_URL/api/payments/sslcommerz/ipn
