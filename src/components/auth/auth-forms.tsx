@@ -88,6 +88,15 @@ export function LoginForm({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
         />
       </Field>
 
+      <div className="text-end">
+        <Link
+          href="/forgot-password"
+          className="text-sm font-medium text-brand-700 hover:underline"
+        >
+          পাসওয়ার্ড ভুলে গেছেন?
+        </Link>
+      </div>
+
       <Turnstile siteKey={turnstileSiteKey} onToken={setToken} />
 
       <Button type="submit" full size="lg" loading={form.formState.isSubmitting}>

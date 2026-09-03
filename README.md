@@ -422,7 +422,7 @@ Working end to end:
 
 - [x] Homepage, category pages, search, filters, sort, pagination
 - [x] Property detail page with gallery and structured data
-- [x] Registration, login, logout, sessions, roles
+- [x] Registration, login, logout, sessions, roles, password reset
 - [x] Multi-step listing wizard with R2 image upload
 - [x] Owner dashboard (listings, stats, status changes, payments, profile)
 - [x] Admin panel (dashboard, moderation, users, payments, unlocks, reports, logs, settings)
@@ -442,8 +442,8 @@ Not yet done — see [`docs/deployment.md`](docs/deployment.md#outstanding-work)
       has been run end to end. Do this before taking real money.
 - [ ] **Cloudflare deployment has not been performed.** No account is attached,
       so the D1 ids in `wrangler.jsonc` are placeholders.
-- [ ] Password reset and email/phone verification flows (the token table,
-      email provider abstraction and schemas exist; the UI does not).
+- [ ] Email/phone **verification** (password reset is built; verifying that an
+      address or number is genuinely the user's is not).
 - [ ] Listing edit screen (creation, status changes and archiving work;
       editing an existing listing's fields does not).
 - [ ] Image thumbnail generation (full-size images are served with immutable

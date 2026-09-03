@@ -223,6 +223,9 @@ with the acting admin, the entity, metadata and a salted IP hash.
 
 - The live SSLCOMMERZ handshake has not been exercised (see
   [`payments.md`](payments.md#what-has-not-been-exercised)).
-- Password reset and account verification flows are not built; the token table
-  and schemas exist.
+- Password reset is built (single-use, 1-hour, hashed-at-rest tokens that end
+  every session on completion). Account *verification* is not: an email address
+  or phone number is taken on trust.
+- Reset links are only as good as the mail path. With `EMAIL_PROVIDER=console`
+  they are written to logs rather than delivered.
 - No penetration test has been performed against a deployed instance.

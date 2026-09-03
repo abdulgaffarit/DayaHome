@@ -264,9 +264,11 @@ Before this is genuinely production-ready:
 3. **Wire a Cron Trigger for listing expiry.** `expireStaleProperties()` is
    implemented and tested but nothing calls it on a schedule. Add a
    `[triggers] crons` entry and a scheduled handler.
-4. **Build password reset and verification.** The `verification_tokens` table,
-   the email provider abstraction and the Zod schemas exist; the routes and UI
-   do not.
+4. **Configure email delivery.** Password reset is built and sends through the
+   provider abstraction, but `EMAIL_PROVIDER` defaults to `console` — links are
+   written to Workers Logs, not delivered. Set `EMAIL_PROVIDER=resend` and the
+   `RESEND_API_KEY` secret before launch, or nobody can recover an account.
+   Email/phone *verification* is still unbuilt.
 5. **Add a listing edit screen.** Creation, status changes and archiving work;
    editing an existing listing's fields does not.
 6. **Generate thumbnails.** Full-size images are served with immutable cache
