@@ -81,7 +81,7 @@
         {
           "binding": "DB",
           "database_name": "dayarampur-staging",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "15de1299-a5d3-44fc-8132-1cfaf5e24885",
           "migrations_dir": "migrations"
         }
       ],
