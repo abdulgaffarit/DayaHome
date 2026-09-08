@@ -61,3 +61,6 @@ coverage/
 .seed.sql
 .seed-images.sql
 .seed-images/
+
+# Local responsive-audit output (screenshots, reports)
+.audit/

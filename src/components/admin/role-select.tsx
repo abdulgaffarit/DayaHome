@@ -52,7 +52,9 @@ export function RoleSelect({ userId, currentRole }: { userId: string; currentRol
       <Select
         value={currentRole}
         aria-label="ভূমিকা পরিবর্তন"
-        className="h-9 w-40 text-sm"
+        // Full tap target and 16px text on phones (iOS zooms the page when a
+        // focused control is under 16px); the compact desktop size from `sm` up.
+        className="h-11 w-40 text-base sm:h-9 sm:text-sm"
         onChange={(event) => setNextRole(event.target.value as Role)}
       >
         {ROLES.map((role) => (

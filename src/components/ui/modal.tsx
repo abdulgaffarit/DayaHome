@@ -54,15 +54,25 @@ export function Modal({
       }}
       className={cn(
         "m-auto w-[calc(100vw-2rem)] rounded-[--radius-card] border border-ink-100 bg-white p-0 text-ink-800 shadow-[--shadow-pop]",
+        // Bounded height with the body scrolling inside, so a long dialog on a
+        // short phone stays reachable instead of running off the screen with
+        // its footer buttons out of reach. `dvh` tracks the mobile browser
+        // chrome as it collapses; `vh` would leave a gap on iOS Safari.
+        "max-h-[calc(100dvh-2rem)] overflow-hidden",
+        // Only while open: an author-level `display` beats the UA's
+        // `dialog:not([open]) { display: none }` (author origin outranks UA
+        // whatever the specificity), so an unprefixed `flex` would lay a closed
+        // dialog out and widen the page.
+        "open:flex open:flex-col",
         "backdrop:bg-ink-900/45 backdrop:backdrop-blur-[2px]",
         size === "sm" && "max-w-sm",
         size === "md" && "max-w-lg",
         size === "lg" && "max-w-2xl",
       )}
     >
-      <div className="flex items-start justify-between gap-4 border-b border-ink-100 p-5">
+      <div className="flex shrink-0 items-start justify-between gap-4 border-b border-ink-100 p-5">
         <div className="min-w-0">
-          <h2 id={titleId} className="text-lg font-semibold text-ink-900">
+          <h2 id={titleId} className="break-words text-lg font-semibold text-ink-900">
             {title}
           </h2>
           {description ? (
@@ -75,14 +85,14 @@ export function Modal({
           type="button"
           onClick={onClose}
           aria-label="বন্ধ করুন"
-          className="-m-1 rounded-full p-1 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
+          className="-m-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
         >
           <X className="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
-      {children ? <div className="p-5">{children}</div> : null}
+      {children ? <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div> : null}
       {footer ? (
-        <div className="flex flex-wrap justify-end gap-3 border-t border-ink-100 bg-ink-50/60 p-4">
+        <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-ink-100 bg-ink-50/60 p-4">
           {footer}
         </div>
       ) : null}

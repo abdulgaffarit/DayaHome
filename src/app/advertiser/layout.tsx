@@ -29,7 +29,11 @@ export default async function AdvertiserLayout({ children }: { children: React.R
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        {/* `min-w-0`: a grid item defaults to `min-width: auto`, so without it
+            the aside is sized by the nav's min-content width and the strip's
+            own `overflow-x-auto` never engages — it widened the whole page
+            instead of scrolling inside itself. */}
+        <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
           <AdvertiserSidebar />
         </aside>
         <div className="min-w-0">{children}</div>

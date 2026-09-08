@@ -75,7 +75,9 @@ export function ReportDialog({
           }
           setOpen(true);
         }}
-        className="inline-flex items-center gap-1.5 text-sm text-ink-500 transition-colors hover:text-danger-500"
+        // `-my-3 py-3` gives the link a 44px hit area on a phone while leaving
+        // the surrounding spacing exactly as it looks today.
+        className="-my-3 inline-flex items-center gap-1.5 py-3 text-sm text-ink-500 transition-colors hover:text-danger-500"
       >
         <Flag className="h-4 w-4" aria-hidden="true" />
         এই বিজ্ঞাপনটি রিপোর্ট করুন

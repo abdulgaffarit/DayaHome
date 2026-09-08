@@ -57,7 +57,10 @@ export function GatewayControls({
   }
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2">
+    // No `shrink-0`: it pinned this row at its full content width, so the
+    // `flex-wrap` never engaged and the buttons pushed the page sideways on a
+    // phone. The wrapping parent already keeps the row intact on desktop.
+    <div className="flex flex-wrap items-center gap-2">
       <Button
         size="sm"
         variant={enabled ? "secondary" : "outline"}

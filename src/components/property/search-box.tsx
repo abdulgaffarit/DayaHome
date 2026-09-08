@@ -64,7 +64,9 @@ export function SearchBox({
             aria-selected={index === tabIndex}
             onClick={() => setTabIndex(index)}
             className={cn(
-              "shrink-0 rounded-[--radius-pill] px-4 py-2 text-sm font-medium transition-colors",
+              // These tabs are the first thing a phone visitor taps, so they get
+              // a full 44px height there and the tighter desktop size from `sm`.
+              "flex h-11 shrink-0 items-center rounded-[--radius-pill] px-4 text-sm font-medium transition-colors sm:h-9",
               index === tabIndex
                 ? "bg-brand-700 text-white"
                 : "text-ink-600 hover:bg-surface-mint hover:text-brand-900",

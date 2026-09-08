@@ -172,7 +172,9 @@ function GalleryArrow({
       onClick={onClick}
       aria-label={direction === "prev" ? "আগের ছবি" : "পরের ছবি"}
       className={cn(
-        "absolute top-1/2 z-10 -translate-y-1/2 rounded-full p-2 transition-colors",
+        // A full 44px target on phones, where these arrows are the main way to
+        // move through the photos; the compact circle returns from `sm` up.
+        "absolute top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full transition-colors sm:h-9 sm:w-9",
         direction === "prev" ? "left-3" : "right-3",
         variant === "light"
           ? "bg-white/90 text-ink-700 shadow-sm hover:bg-white"

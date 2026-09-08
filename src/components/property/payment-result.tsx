@@ -145,7 +145,8 @@ function ResultCard({
 
       {transactionId ? (
         <p className="mt-5 rounded-[--radius-control] bg-ink-50 px-4 py-2.5 text-xs text-ink-500">
-          ট্রানজেকশন আইডি: <span className="font-mono text-ink-700">{transactionId}</span>
+          ট্রানজেকশন আইডি:{" "}
+          <span className="font-mono break-all text-ink-700">{transactionId}</span>
         </p>
       ) : null}
 

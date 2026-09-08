@@ -73,7 +73,9 @@ export function FavoriteButton({
       className={cn(
         "inline-flex items-center justify-center rounded-full transition-colors",
         variant === "overlay"
-          ? "h-9 w-9 bg-white/90 text-ink-600 shadow-sm backdrop-blur hover:bg-white hover:text-danger-500"
+          // 44px on touch screens so the heart is reliably hittable on a card;
+          // the smaller circle from `sm` up keeps the desktop overlay discreet.
+          ? "h-11 w-11 bg-white/90 text-ink-600 shadow-sm backdrop-blur hover:bg-white hover:text-danger-500 sm:h-9 sm:w-9"
           : "h-11 w-11 border border-ink-200 bg-white text-ink-600 hover:border-danger-500 hover:text-danger-500",
         saved && "text-danger-500",
         className,

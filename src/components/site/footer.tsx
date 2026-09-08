@@ -48,13 +48,18 @@ export function Footer() {
           </li>
           <li className="flex items-start gap-2.5 text-sm text-ink-600">
             <Phone className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" aria-hidden="true" />
-            <a href="tel:+8801700000000" className="hover:text-brand-800">
+            {/* `-my-3 py-3`: a 44px tall hit area on a phone, with the negative
+                margin keeping the visual spacing of the list unchanged. */}
+            <a href="tel:+8801700000000" className="-my-3 py-3 hover:text-brand-800">
               ০১৭০০-০০০০০০
             </a>
           </li>
           <li className="flex items-start gap-2.5 text-sm text-ink-600">
             <Mail className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" aria-hidden="true" />
-            <a href="mailto:support@dayarampur.com" className="hover:text-brand-800">
+            <a
+              href="mailto:support@dayarampur.com"
+              className="-my-3 break-all py-3 hover:text-brand-800"
+            >
               support@dayarampur.com
             </a>
           </li>

@@ -328,7 +328,9 @@ function ManualInstructions({
 
         <p className="rounded-[--radius-control] border border-brand-100 bg-surface-mint px-4 py-3">
           রেফারেন্স:{" "}
-          <strong className="font-mono font-semibold text-brand-900">{manual.reference}</strong>
+          <strong className="break-all font-mono font-semibold text-brand-900">
+            {manual.reference}
+          </strong>
         </p>
 
         <p className="text-sm text-ink-600">

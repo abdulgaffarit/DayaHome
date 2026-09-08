@@ -12,7 +12,10 @@ export function AuthShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[calc(100vh-16rem)] items-center justify-center bg-surface-soft px-4 py-12">
+    // `dvh` rather than `vh`: on mobile browsers `100vh` is the viewport with
+    // the address bar collapsed, so a `vh` minimum overshoots the space that is
+    // actually visible and pushes the card off-screen on first paint.
+    <div className="flex min-h-[calc(100dvh-16rem)] items-center justify-center bg-surface-soft px-4 py-12">
       <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center">
           <Logo showTagline={false} />

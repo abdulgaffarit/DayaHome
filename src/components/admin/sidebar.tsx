@@ -55,18 +55,20 @@ export function AdminSidebar({
 
   return (
     <nav aria-label="অ্যাডমিন নেভিগেশন" className="flex h-full flex-col">
-      <ul className="flex-1 space-y-0.5">
+      {/* A horizontal strip on narrow screens (its container scrolls), a rail
+          from lg up. Mirrors the dashboard sidebar so both behave alike. */}
+      <ul className="flex flex-1 gap-1 lg:flex-col lg:gap-0.5">
         {ITEMS.filter((item) => !item.superAdminOnly || isSuperAdmin).map((item) => {
           const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
           const Icon = item.icon;
           const count = item.badgeKey ? badges[item.badgeKey] : 0;
           return (
-            <li key={item.href}>
+            <li key={item.href} className="shrink-0 lg:shrink">
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-[--radius-control] px-3 py-2.5 text-sm font-medium transition-colors",
+                  "flex items-center gap-2.5 whitespace-nowrap rounded-[--radius-control] px-3 py-2.5 text-sm font-medium transition-colors",
                   active
                     ? "bg-brand-700 text-white"
                     : "text-ink-600 hover:bg-ink-100 hover:text-ink-900",
@@ -90,7 +92,10 @@ export function AdminSidebar({
         })}
       </ul>
 
-      <div className="mt-4 space-y-1 border-t border-ink-100 pt-4">
+      {/* Desktop rail only. On mobile these would stack under the scrolling
+          strip and push the page down; the site header's mobile menu already
+          carries both "back to site" and a working logout form. */}
+      <div className="mt-4 hidden space-y-1 border-t border-ink-100 pt-4 lg:block">
         <Link
           href="/"
           className="flex items-center gap-2.5 rounded-[--radius-control] px-3 py-2.5 text-sm font-medium text-ink-600 hover:bg-ink-100"

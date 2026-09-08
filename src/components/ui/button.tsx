@@ -2,7 +2,7 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/cn";
 
-const buttonVariants = cva(
+const buttonStyles = cva(
   // Shared: consistent radius, comfortable tap target (44px at `md`), and a
   // visible focus ring for keyboard users.
   "inline-flex items-center justify-center gap-2 rounded-[--radius-control] font-medium " +
@@ -22,7 +22,11 @@ const buttonVariants = cva(
         link: "text-brand-700 underline underline-offset-4 hover:text-brand-800 rounded-sm",
       },
       size: {
-        sm: "h-9 px-3 text-sm",
+        // 36px is comfortable with a mouse but under the 44px touch minimum, so
+        // devices whose primary input is a finger get the taller box. Scoped to
+        // `pointer-coarse` rather than a width breakpoint so desktop layouts —
+        // admin tables especially — are unchanged at every size.
+        sm: "h-9 pointer-coarse:h-11 px-3 text-sm",
         md: "h-11 px-5 text-[0.95rem]",
         lg: "h-13 px-7 text-base",
         icon: "h-11 w-11",
@@ -33,9 +37,22 @@ const buttonVariants = cva(
   },
 );
 
+/**
+ * Button classes for elements that are not `<Button>` — most often a `<Link>`.
+ *
+ * Goes through `cn` (tailwind-merge) rather than returning cva's raw output,
+ * because cva only concatenates: a caller passing `className: "hidden sm:inline-flex"`
+ * kept the base `inline-flex` too, and since Tailwind emits `inline-flex` after
+ * `hidden` the element stayed visible. That is how the header's desktop-only
+ * buttons rendered at 320px and pushed every page 179px wide.
+ */
+function buttonVariants(props?: Parameters<typeof buttonStyles>[0]): string {
+  return cn(buttonStyles(props));
+}
+
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+    VariantProps<typeof buttonStyles> {
   /** Shows a spinner and blocks further clicks. */
   loading?: boolean;
 }
@@ -47,7 +64,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
   return (
     <button
       ref={ref}
-      className={cn(buttonVariants({ variant, size, full }), className)}
+      className={cn(buttonStyles({ variant, size, full }), className)}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       {...props}

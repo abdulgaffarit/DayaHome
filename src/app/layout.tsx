@@ -72,8 +72,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <HideOnAdmin>
             <Header />
           </HideOnAdmin>
-          {/* Bottom padding leaves room for the fixed mobile nav bar. */}
-          <main id="main" className="flex-1 pb-20 lg:pb-0">
+          {/* MobileBottomNav renders its own spacer, so the footer clears the
+              fixed bar without main reserving room the admin panel never needs. */}
+          <main id="main" className="flex-1">
             {children}
           </main>
           <HideOnAdmin>

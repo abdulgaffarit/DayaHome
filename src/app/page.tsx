@@ -156,7 +156,9 @@ export default async function HomePage() {
           action={
             <Link
               href="/search"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:text-brand-800"
+              // `-my-3 py-3`: a 44px hit area on a phone, with the negative margin
+              // keeping the heading row's spacing exactly as it looks today.
+              className="-my-3 inline-flex items-center gap-1.5 py-3 text-sm font-medium text-brand-700 hover:text-brand-800"
             >
               সব দেখুন
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
