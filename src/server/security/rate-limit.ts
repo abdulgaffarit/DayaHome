@@ -24,6 +24,11 @@ export const RATE_LIMITS = {
   report: { action: "report", limit: 10, windowMs: 60 * 60_000 },
   upload: { action: "upload", limit: 60, windowMs: 60 * 60_000 },
   contact: { action: "contact_lookup", limit: 120, windowMs: 60 * 60_000 },
+  createCampaign: { action: "create_campaign", limit: 10, windowMs: 60 * 60_000 },
+  // Clicks are recorded from a public redirect, so the ceiling is per visitor
+  // and generous — it exists to blunt automated click inflation, not to
+  // throttle a person browsing.
+  adClick: { action: "ad_click", limit: 120, windowMs: 60 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

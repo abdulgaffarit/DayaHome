@@ -7,17 +7,23 @@ import { getPropertyImagesBucket } from "@/server/cloudflare/env";
  * this route. Object keys are random and unguessable, and listing photos are
  * public information anyway, so no per-request authorization is applied — but
  * the key namespace is pinned to `properties/` so this route can never be used
- * to read some other prefix in the bucket.
+ * to read some other prefix in the bucket. Advertisement banners live under
+ * `ads/` and are served the same way — also public, also server-keyed.
  *
  * For production, point NEXT_PUBLIC_IMAGE_BASE_URL at a custom domain in front
  * of the bucket so images are served from the edge without touching the Worker.
  */
+const SERVED_PREFIXES = ["properties/", "ads/"] as const;
+
 export async function GET(_request: Request, { params }: { params: Promise<{ key: string[] }> }) {
   const { key } = await params;
   const objectKey = key.join("/");
 
-  // Reject traversal attempts and anything outside the properties prefix.
-  if (!objectKey.startsWith("properties/") || objectKey.includes("..")) {
+  // Reject traversal attempts and anything outside the served prefixes.
+  // `properties/` are listing photos, `ads/` are advertisement banners; both
+  // are public content with unguessable server-generated keys. Pinning the
+  // prefix is what stops this route being used to read the rest of the bucket.
+  if (!SERVED_PREFIXES.some((prefix) => objectKey.startsWith(prefix)) || objectKey.includes("..")) {
     return new Response("Not found", { status: 404 });
   }
 
