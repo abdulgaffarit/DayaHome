@@ -87,12 +87,14 @@ export default async function HomePage() {
           loading="eager"
           fetchPriority="high"
           decoding="async"
-          // Responsive focal point. The photo is roughly 2:1 and the hero box
-          // is far squarer on a phone, so a centre crop there would keep the
-          // empty sky and lose the gate. Each step moves the crop right as the
-          // box widens and more of the frame fits: the cantonment gate on a
-          // phone, gate and river on a tablet, the whole scene on desktop.
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-[30%_center] sm:object-[40%_center] lg:object-center"
+          // Responsive focal point. The photo is 1774x887 (~2:1) while the hero
+          // box is nearly portrait on a phone, so `cover` crops away most of
+          // the width; a centre crop there would land on empty sky and field.
+          // Each value was measured against the rendered crop rather than
+          // guessed: 15% puts the cantonment gate behind the heading on a
+          // phone, 20% fits the gate and its signage on a tablet, and the full
+          // frame — gate, sunset and river — fits at `lg`.
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-[15%_center] sm:object-[20%_center] lg:object-center"
         />
 
         {/* Scrim. Dark enough for white text to clear WCAG AA over the bright

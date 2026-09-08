@@ -88,6 +88,27 @@ function run(dir: string, args: string[]): RunResult {
 }
 
 /** Gives every environment a non-placeholder id, so other checks are reached. */
+/**
+ * Forces the production D1 id back to the placeholder.
+ *
+ * This test used to rely on wrangler.jsonc still shipping the placeholder, but
+ * the real production database id is committed now, so the guard had nothing to
+ * catch and the test passed a deploy it was written to reject. The placeholder
+ * is injected here instead, which is what the test was always about.
+ */
+function withPlaceholderProductionId(dir: string) {
+  const path = join(dir, "wrangler.jsonc");
+  const source = readFileSync(path, "utf8");
+  const replaced = source.replace(
+    /("database_name":\s*"dayarampur-production",\s*"database_id":\s*)"[^"]*"/,
+    '$1"00000000-0000-0000-0000-000000000000"',
+  );
+  if (replaced === source) {
+    throw new Error("could not find the production database_id in wrangler.jsonc");
+  }
+  writeFileSync(path, replaced);
+}
+
 function withRealDatabaseIds(dir: string) {
   const path = join(dir, "wrangler.jsonc");
   writeFileSync(
@@ -177,8 +198,8 @@ describe("preparing an environment", () => {
 
 describe("bindings that must never be missing", () => {
   it("REJECTS a placeholder database_id — it would bind a database that does not exist", () => {
-    // The repo's wrangler.jsonc ships placeholder ids on purpose.
     const dir = makeWorkspace(generatedDevConfig());
+    withPlaceholderProductionId(dir);
 
     const result = run(dir, ["production"]);
 
