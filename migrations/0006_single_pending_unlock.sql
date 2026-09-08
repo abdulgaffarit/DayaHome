@@ -20,6 +20,13 @@
 -- written, no row is deleted, and no ACTIVE unlock is affected. Superseded
 -- attempts become CANCELLED, which is an existing status, so the history of
 -- what was attempted survives.
+-- TIMESTAMPS
+--
+-- `strftime('%Y-%m-%dT%H:%M:%SZ', 'now')` rather than `datetime('now')`.
+-- SQLite's datetime() renders "YYYY-MM-DD HH:MM:SS" — a space instead of the
+-- 'T', and no trailing 'Z'. Every timestamp in this schema is ISO-8601 UTC and
+-- these columns are compared as TEXT, so mixing the two formats sorts wrongly
+-- within the same day, and Date.parse() reads the space form as LOCAL time.
 -- ============================================================================
 
 -- --------------------------------------------------------------------------
@@ -31,32 +38,35 @@
 UPDATE payments
    SET status = 'CANCELLED',
        failure_reason = 'superseded_duplicate_pending',
-       updated_at = '2026-01-01T00:00:00Z'
+       updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
  WHERE status = 'PENDING'
    AND payment_type = 'PROPERTY_CONTACT_UNLOCK'
-   AND id NOT IN (
-     SELECT min_id FROM (
-       SELECT id AS min_id
-         FROM payments p
-        WHERE p.status = 'PENDING'
-          AND p.payment_type = 'PROPERTY_CONTACT_UNLOCK'
-          AND p.created_at = (
-            SELECT min(q.created_at)
-              FROM payments q
-             WHERE q.user_id = p.user_id
-               AND q.property_id IS p.property_id
-               AND q.status = 'PENDING'
-               AND q.payment_type = 'PROPERTY_CONTACT_UNLOCK'
-          )
-        GROUP BY p.user_id, p.property_id
-     )
+   -- Cancel a row exactly when a strictly-earlier sibling exists for the same
+   -- user and property. Ordering is the (created_at, id) pair, so the outcome
+   -- is deterministic even when two attempts share a timestamp to the second —
+   -- which they can, since these are written by the same request path. The
+   -- earlier MIN(created_at) + GROUP BY form still kept exactly one row, but
+   -- WHICH one was unspecified — a bare column under GROUP BY. Checked against
+   -- a three-way tie, it kept the last-inserted rather than the smallest id.
+   AND EXISTS (
+     SELECT 1
+       FROM payments earlier
+      WHERE earlier.status = 'PENDING'
+        AND earlier.payment_type = 'PROPERTY_CONTACT_UNLOCK'
+        AND earlier.user_id = payments.user_id
+        -- `IS` not `=`: property_id is nullable, and NULL = NULL is NULL.
+        AND earlier.property_id IS payments.property_id
+        AND (
+          earlier.created_at < payments.created_at
+          OR (earlier.created_at = payments.created_at AND earlier.id < payments.id)
+        )
    );
 
 -- The unlock rows that belonged to those attempts go with them. REVOKED, not
 -- deleted: an unlock row is the record that an attempt happened.
 UPDATE contact_unlocks
    SET status = 'REVOKED',
-       updated_at = '2026-01-01T00:00:00Z'
+       updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
  WHERE status = 'PENDING'
    AND payment_id IN (
      SELECT id FROM payments
