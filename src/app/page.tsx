@@ -19,6 +19,7 @@ import {
   listPropertyTypes,
 } from "@/server/properties/queries";
 import { getCurrentUser } from "@/server/auth/current-user";
+import { AdSlot } from "@/components/ads/ad-slot";
 import { PropertyCard } from "@/components/property/property-card";
 import { CategoryCard } from "@/components/property/category-card";
 import { SearchBox } from "@/components/property/search-box";
@@ -103,6 +104,13 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* Ad zone: homepage, below the category grid. The placement, its size
+          and whether it is enabled all come from `advertisement_zones` — this
+          is a reference to a zone, not a second definition of one. */}
+      <div className="container-page">
+        <AdSlot zoneSlug="home-hero-under" className="mx-auto max-w-4xl" />
+      </div>
+
       {/* ---------------------------------------------------------------- */}
       {/* Featured                                                          */}
       {/* ---------------------------------------------------------------- */}
@@ -176,6 +184,10 @@ export default async function HomePage() {
           />
         )}
       </section>
+
+      <div className="container-page">
+        <AdSlot zoneSlug="home-mid" className="mx-auto max-w-4xl" />
+      </div>
 
       {/* ---------------------------------------------------------------- */}
       {/* Statistics                                                        */}

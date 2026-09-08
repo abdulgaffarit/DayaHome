@@ -25,6 +25,7 @@ import { hasActiveUnlock } from "@/server/properties/contact";
 import { getCurrentUser } from "@/server/auth/current-user";
 import { Gallery } from "@/components/property/gallery";
 import { ContactLockCard } from "@/components/property/contact-lock-card";
+import { AdSlot } from "@/components/ads/ad-slot";
 import { PropertyCard } from "@/components/property/property-card";
 import { FavoriteButton } from "@/components/property/favorite-button";
 import { ReportDialog } from "@/components/property/report-dialog";
@@ -115,6 +116,16 @@ export default async function PropertyDetailPage({ params }: PageProps) {
             </li>
           </ol>
         </nav>
+
+        {/* Ad zones on this page are targeted by the listing's own category and
+            location, so a campaign aimed at one area or category only appears
+            where it is relevant. */}
+        <AdSlot
+          zoneSlug="property-top"
+          categorySlug={property.categorySlug}
+          locationSlug={property.areaSlug}
+          className="mb-6"
+        />
 
         <div className="grid gap-8 lg:grid-cols-[1fr_23rem]">
           {/* ---------------- Main column ---------------- */}
@@ -282,6 +293,13 @@ export default async function PropertyDetailPage({ params }: PageProps) {
                 <li>• সন্দেহ হলে বিজ্ঞাপনটি রিপোর্ট করুন।</li>
               </ul>
             </div>
+
+            <AdSlot
+              zoneSlug="property-sidebar"
+              categorySlug={property.categorySlug}
+              locationSlug={property.areaSlug}
+              className="mt-4"
+            />
           </aside>
         </div>
 
