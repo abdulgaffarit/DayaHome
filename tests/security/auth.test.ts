@@ -2,6 +2,9 @@
  * Authentication, sessions and role permissions.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { DEFAULT_ITERATIONS, MAX_SUPPORTED_ITERATIONS } from "@/server/auth/password";
 import { createTestDatabase, type TestDb } from "../helpers/d1";
 import { createUser } from "../helpers/factories";
 import { hashPassword, needsRehash, verifyPassword } from "@/server/auth/password";
@@ -321,5 +324,100 @@ describe("CSRF origin check", () => {
   it("does not gate safe methods", () => {
     const request = new Request(`${SITE}/api/properties`, { method: "GET" });
     expect(isSameOrigin(request, SITE)).toBe(true);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Password hashing on the Workers runtime                                     */
+/*                                                                             */
+/* Cloudflare's WebCrypto refuses PBKDF2 above 100,000 iterations:             */
+/*   NotSupportedError: Pbkdf2 failed: iteration counts above 100000 are not   */
+/*   supported (requested 150000)                                             */
+/* Node has no such limit, so this only ever appeared in production. These     */
+/* tests pin the contract that the runtime imposes.                            */
+/* -------------------------------------------------------------------------- */
+
+describe("PBKDF2 cost", () => {
+  it("CRITICAL: new hashes stay within the Workers iteration ceiling", async () => {
+    const stored = await hashPassword("correct horse battery");
+
+    const iterations = Number.parseInt(stored.split("$")[2], 10);
+    expect(iterations).toBeLessThanOrEqual(MAX_SUPPORTED_ITERATIONS);
+    expect(iterations).toBe(DEFAULT_ITERATIONS);
+    // The algorithm must not have drifted away from PBKDF2-HMAC-SHA-256.
+    expect(stored.startsWith("pbkdf2$sha-256$")).toBe(true);
+  });
+
+  it("CRITICAL: the login dummy hash is one the platform can actually run", async () => {
+    // It is verified on the unknown-identifier path. Above the ceiling it
+    // throws, so a login attempt for a non-existent account 500s instead of
+    // returning "invalid credentials".
+    const source = readFileSync(join(process.cwd(), "src/server/auth/service.ts"), "utf8");
+    const match = source.match(/pbkdf2\$sha-256\$(\d+)\$/);
+
+    expect(match).not.toBeNull();
+    const iterations = Number.parseInt(match![1], 10);
+    expect(iterations).toBe(DEFAULT_ITERATIONS);
+    expect(iterations).toBeLessThanOrEqual(MAX_SUPPORTED_ITERATIONS);
+  });
+
+  it("the seed script hashes at the same cost as the application", () => {
+    // A seeded account hashed above the ceiling could not log in on Workers.
+    const source = readFileSync(join(process.cwd(), "scripts/seed.ts"), "utf8");
+    const match = source.match(/const iterations = ([\d_]+);/);
+
+    expect(match).not.toBeNull();
+    expect(Number.parseInt(match![1].replace(/_/g, ""), 10)).toBe(DEFAULT_ITERATIONS);
+  });
+
+  it("round-trips a password at the current cost", async () => {
+    const stored = await hashPassword("সঠিক পাসওয়ার্ড ১২৩");
+
+    await expect(verifyPassword("সঠিক পাসওয়ার্ড ১২৩", stored)).resolves.toBe(true);
+    await expect(verifyPassword("ভুল পাসওয়ার্ড", stored)).resolves.toBe(false);
+  });
+
+  it("two hashes of the same password differ, and both verify", async () => {
+    const a = await hashPassword("same-password");
+    const b = await hashPassword("same-password");
+
+    // Distinct salts, so a stolen table cannot be attacked once for everyone.
+    expect(a).not.toBe(b);
+    await expect(verifyPassword("same-password", a)).resolves.toBe(true);
+    await expect(verifyPassword("same-password", b)).resolves.toBe(true);
+  });
+
+  it("still verifies a hash written at a LOWER cost", async () => {
+    // Lowering the default must not lock out anything already stored below it.
+    const legacy = await hashPassword("old-password", 50_000);
+
+    await expect(verifyPassword("old-password", legacy)).resolves.toBe(true);
+    expect(needsRehash(legacy)).toBe(true);
+  });
+
+  it("CRITICAL: an unverifiable 150k hash fails closed rather than throwing", async () => {
+    // Built by hand: hashing at 150,000 is exactly what the runtime refuses.
+    const unsupported =
+      "pbkdf2$sha-256$150000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+    // A clean "wrong password", not a 500 — and flagged for replacement so the
+    // account is upgraded the moment it can be.
+    await expect(verifyPassword("anything", unsupported)).resolves.toBe(false);
+    expect(needsRehash(unsupported)).toBe(true);
+  });
+
+  it("needsRehash flags anything not at the current cost, in either direction", async () => {
+    expect(needsRehash(await hashPassword("x"))).toBe(false);
+    expect(needsRehash(await hashPassword("x", 50_000))).toBe(true);
+    expect(needsRehash("pbkdf2$sha-256$150000$AAAA$BBBB")).toBe(true);
+    // Garbage is always due for replacement.
+    expect(needsRehash("not-a-hash")).toBe(true);
+    expect(needsRehash("")).toBe(true);
+  });
+
+  it("rejects a malformed stored hash without throwing", async () => {
+    for (const bad of ["", "not-a-hash", "pbkdf2$sha-256$100000$only-four", "md5$x$1000$a$b"]) {
+      await expect(verifyPassword("password", bad)).resolves.toBe(false);
+    }
   });
 });

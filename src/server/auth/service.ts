@@ -86,8 +86,16 @@ interface LoginRow {
  * Without this, a missing account would return noticeably faster than a wrong
  * password and the response time alone would enumerate registered numbers.
  */
+/**
+ * Verified on the unknown-identifier path so a missing account costs the same
+ * time as a wrong password.
+ *
+ * Its iteration count MUST match DEFAULT_ITERATIONS: it has to be a hash the
+ * platform can actually run, and equal work to a real verification or the
+ * timing equalisation it exists for does not hold.
+ */
 const DUMMY_HASH =
-  "pbkdf2$sha-256$150000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  "pbkdf2$sha-256$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
 export async function loginUser(
   db: D1Database,

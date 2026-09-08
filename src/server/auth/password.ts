@@ -5,7 +5,8 @@
  * primitive available natively in Workers, and pulling a WASM argon2 build into
  * the bundle would cost far more than it buys at this scale. The iteration
  * count is stored inside the hash string, so it can be raised later and old
- * hashes keep verifying (and are transparently upgraded on next login).
+ * hashes keep verifying (and are transparently upgraded on next login) — but
+ * only up to MAX_SUPPORTED_ITERATIONS, which the Workers runtime enforces.
  */
 import { timingSafeEqual } from "@/lib/ids";
 
@@ -15,10 +16,24 @@ const KEY_LENGTH_BITS = 256;
 const SALT_BYTES = 16;
 
 /**
- * Tuned for the Workers CPU budget: ~150k iterations keeps a login well inside
- * the request limit while staying far above a trivially brute-forceable cost.
+ * The hard ceiling the Workers runtime enforces on PBKDF2.
+ *
+ * `crypto.subtle.deriveBits` throws
+ *   NotSupportedError: Pbkdf2 failed: iteration counts above 100000 are not
+ *   supported (requested 150000)
+ * for anything higher. Node has no such limit, which is why this only ever
+ * surfaced once the code ran on Cloudflare.
  */
-export const DEFAULT_ITERATIONS = 150_000;
+export const MAX_SUPPORTED_ITERATIONS = 100_000;
+
+/**
+ * The cost every new hash is written at.
+ *
+ * Pinned to the platform ceiling: it is the strongest PBKDF2 cost Workers will
+ * actually run, and raising it again would break hashing outright rather than
+ * merely slow it down.
+ */
+export const DEFAULT_ITERATIONS = MAX_SUPPORTED_ITERATIONS;
 
 export async function hashPassword(
   password: string,
@@ -32,14 +47,36 @@ export async function hashPassword(
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parsed = parseHash(stored);
   if (!parsed) return false;
+
+  // A hash written before the Workers ceiling was known cannot be verified
+  // here at all — deriveBits would throw rather than return a wrong answer.
+  // Failing closed keeps that a clean "wrong password" instead of a 500, and
+  // the account recovers through password reset, which writes a new hash at
+  // the supported cost.
+  if (parsed.iterations > MAX_SUPPORTED_ITERATIONS) {
+    console.error(
+      `[auth] stored hash uses ${parsed.iterations} PBKDF2 iterations, above the ` +
+        `platform maximum of ${MAX_SUPPORTED_ITERATIONS}; this account must reset its password`,
+    );
+    return false;
+  }
+
   const derived = await deriveBits(password, parsed.salt, parsed.iterations);
   return timingSafeEqual(b64(derived), b64(parsed.hash));
 }
 
-/** True when the stored hash uses a weaker cost than we now require. */
+/**
+ * True when the stored hash is not at the current cost.
+ *
+ * Deliberately `!==` rather than `<`: a hash is due for replacement both when
+ * it is weaker than we now require AND when it is stronger than the platform
+ * can execute. The second case used to be impossible, which is why this was
+ * once a `<` — a 150,000-iteration hash is unverifiable on Workers, so it must
+ * be rewritten at the first opportunity, not treated as good enough.
+ */
 export function needsRehash(stored: string): boolean {
   const parsed = parseHash(stored);
-  return !parsed || parsed.iterations < DEFAULT_ITERATIONS;
+  return !parsed || parsed.iterations !== DEFAULT_ITERATIONS;
 }
 
 async function deriveBits(

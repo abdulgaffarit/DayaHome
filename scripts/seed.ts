@@ -30,7 +30,9 @@ function id(prefix: string, seed: string): string {
 
 /** Mirrors src/server/auth/password.ts so seeded users can actually log in. */
 function hashPassword(password: string): string {
-  const iterations = 150_000;
+  // Must match DEFAULT_ITERATIONS in src/server/auth/password.ts, and stay
+  // within the Workers PBKDF2 ceiling of 100,000.
+  const iterations = 100_000;
   const salt = randomBytes(16);
   const derived = pbkdf2Sync(password, salt, iterations, 32, "sha256");
   return `pbkdf2$sha-256$${iterations}$${salt.toString("base64")}$${derived.toString("base64")}`;
