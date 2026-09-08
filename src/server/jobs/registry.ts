@@ -22,6 +22,10 @@
  */
 import { expireStaleProperties } from "@/server/properties/mutations";
 import { runCampaignSchedule } from "@/server/advertising/campaigns";
+import {
+  expireBoostedProperties,
+  expireFeaturedProperties,
+} from "@/server/properties/monetization";
 
 export interface JobOutcome {
   /** Rows this job actually transitioned. Zero is the normal steady state. */
@@ -67,6 +71,18 @@ export const SCHEDULED_JOBS: readonly ScheduledJob[] = [
       // position rather than a guarantee.
       const { activated, expired } = await runCampaignSchedule(db);
       return { changed: activated + expired, detail: { activated, expired } };
+    },
+  },
+  {
+    name: "expire-monetization",
+    summary: "Retires featured placements and boosts whose paid window has closed.",
+    async run(db) {
+      // Featured and boost are separate purchases with separate windows, so
+      // both are swept — but in one job, because neither depends on the other
+      // and a partial sweep would leave a paid benefit running unpaid.
+      const featured = await expireFeaturedProperties(db);
+      const boosted = await expireBoostedProperties(db);
+      return { changed: featured + boosted, detail: { featured, boosted } };
     },
   },
 ];

@@ -9,6 +9,8 @@ import { StatusBadge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { buttonVariants } from "@/components/ui/button";
 import { OwnerPropertyActions } from "@/components/dashboard/owner-property-actions";
+import { PromoteProperty } from "@/components/dashboard/promote-property";
+import { listPlans } from "@/server/properties/monetization";
 import { formatPrice, formatRelativeBanglaDate, toBanglaDigits } from "@/lib/bangla";
 
 export const metadata: Metadata = { title: "আমার বিজ্ঞাপন" };
@@ -16,7 +18,16 @@ export const metadata: Metadata = { title: "আমার বিজ্ঞাপ�
 export default async function OwnerPropertiesPage() {
   const user = await requireUser("/dashboard/properties");
   // Scoped to the signed-in owner — another owner's listing cannot appear here.
-  const properties = await listOwnerProperties(getDb(), user.id);
+  const db = getDb();
+  const properties = await listOwnerProperties(db, user.id);
+
+  // Prices and durations come from monetization_plans, so an operator can
+  // change what promotion costs without a deploy.
+  const [featuredPlans, boostPlans] = await Promise.all([
+    listPlans(db, "FEATURED_PROPERTY"),
+    listPlans(db, "PROPERTY_BOOST"),
+  ]);
+  const plans = [...featuredPlans, ...boostPlans];
 
   return (
     <Card>
@@ -112,6 +123,14 @@ export default async function OwnerPropertiesPage() {
                     <Pencil className="h-4 w-4" aria-hidden="true" />
                     দেখুন
                   </Link>
+                  {property.status === "APPROVED" ? (
+                    <PromoteProperty
+                      propertyId={property.id}
+                      plans={plans}
+                      featuredUntil={property.featuredUntil}
+                      boostedUntil={property.boostedUntil}
+                    />
+                  ) : null}
                   <OwnerPropertyActions
                     propertyId={property.id}
                     status={property.status}

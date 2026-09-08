@@ -22,6 +22,10 @@ import { newId, newToken } from "@/lib/ids";
 import { nowIso } from "@/lib/time";
 import { notify } from "@/server/notifications/notify";
 import { onCampaignPaymentSettled } from "@/server/advertising/payments";
+import {
+  grantMonetizationBenefit,
+  planFromPayment,
+} from "@/server/properties/monetization";
 
 export const CURRENCY = "BDT";
 
@@ -342,7 +346,30 @@ export async function settlePayment(
   // What a settled payment DELIVERS depends on what was bought. Verification
   // and the idempotency gate above are shared by every payment type; only this
   // step differs.
-  if (isAdvertisingPayment(payment.payment_type) && payment.advertisement_id) {
+  if (isMonetizationPayment(payment.payment_type) && payment.property_id) {
+    // A featured or boosted placement is granted HERE and nowhere else, so
+    // creating a payment record can never confer the benefit on its own.
+    const plan = await planFromPayment(db, payment.id);
+    await grantMonetizationBenefit(db, {
+      paymentId: payment.id,
+      propertyId: payment.property_id,
+      paymentType: payment.payment_type as "FEATURED_PROPERTY" | "PROPERTY_BOOST",
+      durationDays: plan?.durationDays ?? 7,
+    });
+
+    await notify(db, {
+      userId: payment.user_id,
+      type: "PAYMENT_SUCCESSFUL",
+      titleBn: "পেমেন্ট সফল হয়েছে",
+      bodyBn:
+        payment.payment_type === "FEATURED_PROPERTY"
+          ? `৳${payment.amount} পেমেন্ট গ্রহণ করা হয়েছে। আপনার বিজ্ঞাপনটি এখন ফিচার্ড।`
+          : `৳${payment.amount} পেমেন্ট গ্রহণ করা হয়েছে। আপনার বিজ্ঞাপনটি বুস্ট করা হয়েছে।`,
+      link: `/dashboard/properties`,
+      entityType: "payment",
+      entityId: payment.id,
+    });
+  } else if (isAdvertisingPayment(payment.payment_type) && payment.advertisement_id) {
     // Deliberately advances the campaign only as far as the review queue.
     await onCampaignPaymentSettled(db, payment.advertisement_id, payment.id);
 
@@ -379,6 +406,10 @@ export async function settlePayment(
 
 function isAdvertisingPayment(paymentType: string): boolean {
   return paymentType === "ADVERTISEMENT" || paymentType === "ADVERTISEMENT_RENEWAL";
+}
+
+function isMonetizationPayment(paymentType: string): boolean {
+  return paymentType === "FEATURED_PROPERTY" || paymentType === "PROPERTY_BOOST";
 }
 
 async function activateUnlock(db: D1Database, payment: PaymentRow, now: string): Promise<void> {

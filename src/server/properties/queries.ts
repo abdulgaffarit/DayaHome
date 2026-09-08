@@ -5,6 +5,7 @@
  * `latitude` or `longitude`. See src/server/properties/columns.ts.
  */
 import type { PropertyCardData, PropertyImage, PublicProperty } from "@/domain/property";
+import { nowIso } from "@/lib/time";
 import type { FurnishedState, PricePeriod, PropertyStatus, TenantType } from "@/domain/enums";
 import type { SearchQuery } from "@/domain/schemas";
 import { type Bindable, placeholders, queryAll, queryOne } from "@/server/db/client";
@@ -333,11 +334,25 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (m) => `\\${m}`);
 }
 
+/**
+ * Ranking, in tiers.
+ *
+ * Featured first, then boosted, then everything else by the chosen sort. Boost
+ * lifts a listing above ordinary ones without ever outranking a featured
+ * placement, and without hiding anything — a boosted listing appears sooner,
+ * not alone.
+ *
+ * `BOOSTED_RANK` carries a `?` bound to the current time rather than relying on
+ * `boosted_until IS NOT NULL`: the expiry sweep runs hourly, so between runs a
+ * just-expired boost would otherwise keep its lift for up to an hour.
+ */
+const BOOSTED_RANK = `(p.boosted_until IS NOT NULL AND p.boosted_until > ?) DESC`;
+
 const ORDER_BY: Record<string, string> = {
-  newest: `p.is_featured DESC, COALESCE(p.published_at, p.created_at) DESC`,
-  price_asc: `p.is_featured DESC, p.price ASC`,
-  price_desc: `p.is_featured DESC, p.price DESC`,
-  popular: `p.is_featured DESC, p.views_count DESC, COALESCE(p.published_at, p.created_at) DESC`,
+  newest: `p.is_featured DESC, ${BOOSTED_RANK}, COALESCE(p.published_at, p.created_at) DESC`,
+  price_asc: `p.is_featured DESC, ${BOOSTED_RANK}, p.price ASC`,
+  price_desc: `p.is_featured DESC, ${BOOSTED_RANK}, p.price DESC`,
+  popular: `p.is_featured DESC, ${BOOSTED_RANK}, p.views_count DESC, COALESCE(p.published_at, p.created_at) DESC`,
 };
 
 export async function searchProperties(
@@ -364,7 +379,10 @@ export async function searchProperties(
      WHERE ${where.sql}
      ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,
-    [...where.params, pageSize, (page - 1) * pageSize],
+    // The boost cutoff binds to the single `?` inside the ORDER BY fragment;
+    // placeholders bind in the order they appear, so it sits between the WHERE
+    // params and the pagination ones.
+    [...where.params, nowIso(), pageSize, (page - 1) * pageSize],
   );
 
   return {

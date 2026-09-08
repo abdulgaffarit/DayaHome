@@ -23,6 +23,10 @@ export interface OwnerPropertyRow {
   unlocksCount: number;
   favoritesCount: number;
   isFeatured: boolean;
+  /** When the paid featured placement ends. NULL when it was set by staff. */
+  featuredUntil: string | null;
+  /** When the paid boost ends, or NULL when there is no live boost. */
+  boostedUntil: string | null;
   rejectionReason: string | null;
   primaryImageKey: string | null;
   expiresAt: string | null;
@@ -44,6 +48,8 @@ interface RawOwnerRow {
   unlocks_count: number;
   favorites_count: number;
   is_featured: number;
+  featured_until: string | null;
+  boosted_until: string | null;
   rejection_reason: string | null;
   primary_image_key: string | null;
   expires_at: string | null;
@@ -67,7 +73,8 @@ export async function listOwnerProperties(
     `SELECT p.id, p.public_ref, p.slug, p.title, p.status, p.price, p.price_period,
             c.name_bn AS category_name_bn, l.name_bn AS area_name_bn,
             p.views_count, p.unique_views_count, p.unlocks_count, p.favorites_count,
-            p.is_featured, p.rejection_reason, p.expires_at, p.created_at,
+            p.is_featured, p.featured_until, p.boosted_until,
+            p.rejection_reason, p.expires_at, p.created_at,
             (SELECT COALESCE(pi.thumb_key, pi.object_key) FROM property_images pi
               WHERE pi.property_id = p.id ORDER BY pi.is_primary DESC, pi.sort_order ASC LIMIT 1) AS primary_image_key
        FROM properties p
@@ -93,6 +100,13 @@ export async function listOwnerProperties(
     unlocksCount: r.unlocks_count,
     favoritesCount: r.favorites_count,
     isFeatured: r.is_featured === 1,
+    // Both windows are reported only while they are still live. Deciding this
+    // on the server keeps the dashboard components pure — a render must not
+    // depend on the wall clock.
+    featuredUntil:
+      r.featured_until && Date.parse(r.featured_until) > Date.now() ? r.featured_until : null,
+    boostedUntil:
+      r.boosted_until && Date.parse(r.boosted_until) > Date.now() ? r.boosted_until : null,
     rejectionReason: r.rejection_reason,
     primaryImageKey: r.primary_image_key,
     expiresAt: r.expires_at,
