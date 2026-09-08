@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { safeNextPath } from "@/lib/next-path";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/auth/auth-shell";
@@ -13,9 +14,17 @@ export const metadata: Metadata = {
   robots: NOINDEX,
 };
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
   // Already signed in — no reason to show the form again.
-  if (await getCurrentUser()) redirect("/dashboard");
+  // Honour `next` for someone who is already signed in: arriving here with a
+  // pending intent (a property waiting to be unlocked, say) and being dropped
+  // on the dashboard would silently discard it.
+  const { next } = await searchParams;
+  if (await getCurrentUser()) redirect(safeNextPath(next));
 
   return (
     <AuthShell title="লগইন করুন" description="আপনার অ্যাকাউন্টে প্রবেশ করুন।">

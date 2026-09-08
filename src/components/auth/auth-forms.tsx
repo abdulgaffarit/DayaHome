@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { nextParam, safeNextPath } from "@/lib/next-path";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -16,12 +17,11 @@ interface ApiError {
   error?: { message?: string; fields?: Record<string, string> };
 }
 
-/** Safe internal redirect target. An absolute or protocol-relative `next`
- *  parameter is discarded so the login page cannot be used as an open redirect. */
-function safeNext(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/dashboard";
-  return value;
-}
+/**
+ * Shared with the pages and the contact card so "safe internal path" has one
+ * definition rather than one per caller.
+ */
+const safeNext = (value: string | null): string => safeNextPath(value);
 
 export function LoginForm({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
   const router = useRouter();
@@ -105,7 +105,10 @@ export function LoginForm({ turnstileSiteKey }: { turnstileSiteKey?: string }) {
 
       <p className="text-center text-sm text-ink-600">
         অ্যাকাউন্ট নেই?{" "}
-        <Link href="/register" className="font-medium text-brand-700 hover:underline">
+        <Link
+          href={`/register${nextParam(params.get("next"))}`}
+          className="font-medium text-brand-700 hover:underline"
+        >
           রেজিস্টার করুন
         </Link>
       </p>
@@ -260,7 +263,10 @@ export function RegisterForm({ turnstileSiteKey }: { turnstileSiteKey?: string }
 
       <p className="text-center text-sm text-ink-600">
         ইতিমধ্যে অ্যাকাউন্ট আছে?{" "}
-        <Link href="/login" className="font-medium text-brand-700 hover:underline">
+        <Link
+          href={`/login${nextParam(params.get("next"))}`}
+          className="font-medium text-brand-700 hover:underline"
+        >
           লগইন করুন
         </Link>
       </p>

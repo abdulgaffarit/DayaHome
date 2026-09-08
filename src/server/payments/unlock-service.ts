@@ -98,39 +98,119 @@ export async function createUnlockPayment(
   // already paid for.
   if (existing) return { status: "ALREADY_UNLOCKED" };
 
-  const transactionId = buildTransactionId(property.public_ref);
-  const paymentId = newId("pay");
-  const unlockId = newId("unl");
   const now = nowIso();
-
   const description = `যোগাযোগের তথ্য — ${property.title}`;
 
-  await batch(db, [
-    {
-      sql: `INSERT INTO payments
-              (id, transaction_id, user_id, property_id, payment_type, description,
-               amount, currency, gateway, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'PROPERTY_CONTACT_UNLOCK', ?, ?, ?, ?, 'PENDING', ?, ?)`,
-      params: [
-        paymentId,
-        transactionId,
-        user.id,
+  // Reuse an unsettled attempt rather than opening a second one.
+  //
+  // Without this, every click on the pay button inserted a fresh payment and a
+  // fresh PENDING unlock. Production accumulated six PENDING rows for one
+  // user and one property that way. One attempt per user+property is also what
+  // `payments_pending_unlock_uq` enforces at the database level, so this is the
+  // cooperative path to the same invariant rather than the only defence.
+  const pending = await queryOne<{ id: string; transaction_id: string }>(
+    db,
+    `SELECT id, transaction_id
+       FROM payments
+      WHERE user_id = ? AND property_id = ?
+        AND payment_type = 'PROPERTY_CONTACT_UNLOCK' AND status = 'PENDING'
+      ORDER BY created_at ASC
+      LIMIT 1`,
+    [user.id, propertyId],
+  );
+
+  const paymentId = pending?.id ?? newId("pay");
+  const transactionId = pending?.transaction_id ?? buildTransactionId(property.public_ref);
+
+  if (!pending) {
+    try {
+      await batch(db, [
+        {
+          sql: `INSERT INTO payments
+                  (id, transaction_id, user_id, property_id, payment_type, description,
+                   amount, currency, gateway, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'PROPERTY_CONTACT_UNLOCK', ?, ?, ?, ?, 'PENDING', ?, ?)`,
+          params: [
+            paymentId,
+            transactionId,
+            user.id,
+            propertyId,
+            description,
+            priceBdt,
+            CURRENCY,
+            gateway.id,
+            now,
+            now,
+          ],
+        },
+        {
+          sql: `INSERT INTO contact_unlocks
+                  (id, user_id, property_id, payment_id, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'PENDING', ?, ?)`,
+          params: [newId("unl"), user.id, propertyId, paymentId, now, now],
+        },
+      ]);
+    } catch (error) {
+      // Two clicks raced and the other one won. Its row is the live attempt.
+      if (!isUniqueViolation(error)) throw error;
+
+      const winner = await queryOne<{ id: string; transaction_id: string }>(
+        db,
+        `SELECT id, transaction_id
+           FROM payments
+          WHERE user_id = ? AND property_id = ?
+            AND payment_type = 'PROPERTY_CONTACT_UNLOCK' AND status = 'PENDING'
+          ORDER BY created_at ASC
+          LIMIT 1`,
+        [user.id, propertyId],
+      );
+      if (!winner) throw error;
+      return openGatewaySession(db, {
+        gateway,
+        user,
         propertyId,
-        description,
         priceBdt,
-        CURRENCY,
-        gateway.id,
-        now,
-        now,
-      ],
-    },
-    {
-      sql: `INSERT INTO contact_unlocks
-              (id, user_id, property_id, payment_id, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'PENDING', ?, ?)`,
-      params: [unlockId, user.id, propertyId, paymentId, now, now],
-    },
-  ]);
+        description,
+        urls,
+        paymentId: winner.id,
+        transactionId: winner.transaction_id,
+      });
+    }
+  }
+
+  return openGatewaySession(db, {
+    gateway,
+    user,
+    propertyId,
+    priceBdt,
+    description,
+    urls,
+    paymentId,
+    transactionId,
+  });
+}
+
+/**
+ * Asks the gateway to open a checkout for a payment row that already exists.
+ *
+ * Split out so a reused attempt and a brand-new one take exactly the same
+ * path: the row is created at most once, and a retry re-opens a session
+ * against the same transaction id rather than minting another.
+ */
+async function openGatewaySession(
+  db: D1Database,
+  args: {
+    gateway: PaymentGateway;
+    user: AuthUser;
+    propertyId: string;
+    priceBdt: number;
+    description: string;
+    urls: CreatePaymentUrls;
+    paymentId: string;
+    transactionId: string;
+  },
+): Promise<CreateUnlockPaymentResult> {
+  const { gateway, user, priceBdt, description, urls, paymentId, transactionId } = args;
 
   let created: CreatePaymentResult;
   try {
@@ -152,7 +232,7 @@ export async function createUnlockPayment(
       failUrl: urls.failUrl,
       cancelUrl: urls.cancelUrl,
       webhookUrl: urls.ipnUrl,
-      metadata: { userId: user.id, propertyId, paymentId },
+      metadata: { userId: user.id, propertyId: args.propertyId, paymentId },
     });
   } catch (error) {
     // An unconfigured gateway throws rather than pretending to take money.
@@ -161,12 +241,22 @@ export async function createUnlockPayment(
   }
 
   if (created.kind === "FAILED") {
-    await execute(
-      db,
-      `UPDATE payments SET status = 'FAILED', failure_reason = ?, updated_at = ?
-        WHERE id = ? AND status = 'PENDING'`,
-      [created.reason, nowIso(), paymentId],
-    );
+    // Retire BOTH rows. Marking only the payment used to leave an orphan
+    // PENDING unlock behind, and that row would then block the reuse lookup
+    // from ever matching a healthy attempt.
+    const failedAt = nowIso();
+    await batch(db, [
+      {
+        sql: `UPDATE payments SET status = 'FAILED', failure_reason = ?, updated_at = ?
+               WHERE id = ? AND status = 'PENDING'`,
+        params: [created.reason.slice(0, 200), failedAt, paymentId],
+      },
+      {
+        sql: `UPDATE contact_unlocks SET status = 'REVOKED', updated_at = ?
+               WHERE payment_id = ? AND status = 'PENDING'`,
+        params: [failedAt, paymentId],
+      },
+    ]);
     return { status: "GATEWAY_ERROR", reason: created.reason };
   }
 

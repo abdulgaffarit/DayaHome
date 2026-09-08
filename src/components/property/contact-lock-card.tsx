@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { toBanglaDigits } from "@/lib/bangla";
+import { safeNextPath } from "@/lib/next-path";
 
 /**
  * Locked contact panel.
@@ -19,6 +20,19 @@ import { toBanglaDigits } from "@/lib/bangla";
  * placeholder below is presentation, not protection — there is nothing behind
  * the blur until the fetch succeeds.
  */
+/**
+ * Where to come back to after signing in: this property, with the intent to
+ * unlock preserved.
+ *
+ * Built from `window.location.pathname` rather than anything in the URL, and
+ * put through `safeNextPath` before it is handed to the auth pages, so the
+ * value that ends up in `?next=` is always a same-origin path this app owns.
+ */
+function unlockReturnPath(): string {
+  if (typeof window === "undefined") return "/";
+  return safeNextPath(`${window.location.pathname}?unlock=1`, "/");
+}
+
 export function ContactLockCard({
   propertyId,
   priceBdt,
@@ -38,6 +52,15 @@ export function ContactLockCard({
   );
   const [loading, setLoading] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [manual, setManual] = React.useState<{
+    instructionsBn: string;
+    reference: string;
+    accountNumber?: string;
+  } | null>(null);
+
+  // A ref, not the `loading` state: state updates are async, so two clicks in
+  // the same tick would both see `loading === false` and both POST.
+  const inFlight = React.useRef(false);
 
   const reveal = React.useCallback(async () => {
     setLoading(true);
@@ -52,7 +75,7 @@ export function ContactLockCard({
         return;
       }
       if (response.status === 401) {
-        router.push(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+        router.push(`/register?next=${encodeURIComponent(unlockReturnPath())}`);
         return;
       }
       toast.show("যোগাযোগের তথ্য দেখতে পেমেন্ট করতে হবে।", "error");
@@ -72,11 +95,21 @@ export function ContactLockCard({
     void reveal();
   }, [hasUnlock, reveal]);
 
-  async function startPayment() {
+
+  const startPayment = React.useCallback(async () => {
     if (!isAuthenticated) {
-      router.push(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+      // Most people reaching this button are buying for the first time, so
+      // registration is the right default. The register page carries a login
+      // link that preserves `next`, which is how someone who already has an
+      // account gets there without losing the property or the intent.
+      router.push(`/register?next=${encodeURIComponent(unlockReturnPath())}`);
       return;
     }
+
+    // Guards a double-click: the second call returns before it can POST.
+    if (inFlight.current) return;
+    inFlight.current = true;
+
     setLoading(true);
     try {
       // Only the property id is sent. The amount is decided server-side; a
@@ -89,6 +122,10 @@ export function ContactLockCard({
       const data = (await response.json()) as {
         redirectUrl?: string;
         alreadyUnlocked?: boolean;
+        manual?: boolean;
+        instructionsBn?: string;
+        reference?: string;
+        accountNumber?: string;
         error?: { message?: string };
       };
 
@@ -97,20 +134,67 @@ export function ContactLockCard({
         await reveal();
         return;
       }
+
+      // A gateway that settles out of band returns instructions instead of a
+      // checkout URL. Treating that as a failure was the production bug: the
+      // payment row had already been created, so every retry left another
+      // PENDING row behind while the payer was told it had not worked.
+      if (response.ok && data.manual) {
+        setManual({
+          instructionsBn: data.instructionsBn ?? "",
+          reference: data.reference ?? "",
+          accountNumber: data.accountNumber,
+        });
+        setConfirmOpen(false);
+        return;
+      }
+
       if (response.ok && data.redirectUrl) {
         window.location.href = data.redirectUrl;
         return;
       }
-      toast.show(data.error?.message ?? "পেমেন্ট শুরু করা যায়নি।", "error");
+
+      toast.show(
+        data.error?.message ??
+          "পেমেন্ট শুরু করা যায়নি। কিছুক্ষণ পর আবার চেষ্টা করুন বা আমাদের সাথে যোগাযোগ করুন।",
+        "error",
+      );
     } catch {
-      toast.show("পেমেন্ট শুরু করা যায়নি। আবার চেষ্টা করুন।", "error");
+      toast.show("পেমেন্ট শুরু করা যায়নি। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।", "error");
     } finally {
+      inFlight.current = false;
       setLoading(false);
-      setConfirmOpen(false);
     }
-  }
+  }, [isAuthenticated, propertyId, reveal, router, toast]);
+
+  /**
+   * Resume checkout after signing in.
+   *
+   * The auth pages send the visitor back to `?unlock=1`, which is the whole
+   * point of carrying `next` through registration: they land where they left
+   * off with the purchase already in progress rather than on a page they have
+   * to find their way back from.
+   *
+   * The flag is stripped from the address bar first, so a refresh — or a
+   * shared link — does not re-open checkout unasked.
+   */
+  const autoStarted = React.useRef(false);
+  React.useEffect(() => {
+    if (autoStarted.current || hasUnlock || !isAuthenticated) return;
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("unlock") !== "1") return;
+
+    autoStarted.current = true;
+    window.history.replaceState(null, "", window.location.pathname);
+
+    // Scheduled rather than called inline: `startPayment` sets state, and
+    // doing that synchronously inside an effect cascades an extra render.
+    const timer = window.setTimeout(() => void startPayment(), 0);
+    return () => window.clearTimeout(timer);
+  }, [hasUnlock, isAuthenticated, startPayment]);
 
   if (contact) return <UnlockedContact contact={contact} />;
+  if (manual) return <ManualInstructions manual={manual} priceBdt={priceBdt} />;
 
   return (
     <>
@@ -149,14 +233,20 @@ export function ContactLockCard({
             <Benefit>একবার পেমেন্ট — এই বিজ্ঞাপনে যতবার খুশি দেখুন</Benefit>
           </ul>
 
-          <Button full size="lg" className="mt-5" onClick={() => setConfirmOpen(true)}>
+          <Button
+            full
+            size="lg"
+            className="mt-5"
+            disabled={loading}
+            onClick={() => setConfirmOpen(true)}
+          >
             ৳{toBanglaDigits(priceBdt)} দিয়ে যোগাযোগের তথ্য দেখুন
           </Button>
 
           <p className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-ink-500">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
-            পেমেন্ট সম্পন্ন হয় SSLCOMMERZ-এর নিরাপদ গেটওয়েতে। এই বিজ্ঞাপনের জন্য
-            একবারই টাকা লাগবে — পরে আবার এলে নতুন করে টাকা কাটা হবে না।
+            পেমেন্ট নিরাপদভাবে সম্পন্ন হয়। এই বিজ্ঞাপনের জন্য একবারই টাকা লাগবে —
+            পরে আবার এলে নতুন করে টাকা কাটা হবে না।
           </p>
         </div>
       </section>
@@ -168,10 +258,10 @@ export function ContactLockCard({
         description={`এই বিজ্ঞাপনের যোগাযোগের তথ্য দেখতে ৳${toBanglaDigits(priceBdt)} লাগবে।`}
         footer={
           <>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+            <Button variant="outline" disabled={loading} onClick={() => setConfirmOpen(false)}>
               বাতিল
             </Button>
-            <Button onClick={startPayment} loading={loading}>
+            <Button onClick={() => void startPayment()} loading={loading} disabled={loading}>
               পেমেন্টে যান
             </Button>
           </>
@@ -189,6 +279,65 @@ export function ContactLockCard({
         </p>
       </Modal>
     </>
+  );
+}
+
+/**
+ * Shown when the active gateway settles out of band.
+ *
+ * This is a real state, not an error: the payment row exists and is PENDING,
+ * the payer has a reference to quote, and an administrator confirms it. Saying
+ * "পেমেন্ট শুরু করা যায়নি" here — which is what used to happen — told the payer
+ * the opposite of the truth and invited them to click again.
+ */
+function ManualInstructions({
+  manual,
+  priceBdt,
+}: {
+  manual: { instructionsBn: string; reference: string; accountNumber?: string };
+  priceBdt: number;
+}) {
+  return (
+    <section
+      aria-labelledby="manual-payment-heading"
+      className="overflow-hidden rounded-[--radius-card] border border-brand-200 bg-white shadow-[--shadow-card]"
+    >
+      <div className="border-b border-brand-100 bg-surface-mint px-5 py-4">
+        <h2
+          id="manual-payment-heading"
+          className="flex items-center gap-2 text-base font-semibold text-brand-900"
+        >
+          <ShieldCheck className="h-4.5 w-4.5" aria-hidden="true" />
+          পেমেন্টের নির্দেশনা
+        </h2>
+      </div>
+
+      <div className="space-y-3 p-5 text-[0.95rem] leading-relaxed text-ink-700">
+        <p>{manual.instructionsBn}</p>
+
+        {manual.accountNumber ? (
+          <p className="rounded-[--radius-control] border border-ink-100 bg-ink-50 px-4 py-3">
+            নম্বর:{" "}
+            <strong className="font-semibold text-ink-900">{manual.accountNumber}</strong>
+          </p>
+        ) : null}
+
+        <p className="rounded-[--radius-control] border border-ink-100 bg-ink-50 px-4 py-3">
+          পরিমাণ: <strong className="font-semibold text-ink-900">৳{toBanglaDigits(priceBdt)}</strong>
+        </p>
+
+        <p className="rounded-[--radius-control] border border-brand-100 bg-surface-mint px-4 py-3">
+          রেফারেন্স:{" "}
+          <strong className="font-mono font-semibold text-brand-900">{manual.reference}</strong>
+        </p>
+
+        <p className="text-sm text-ink-600">
+          টাকা পাঠানোর সময় রেফারেন্সটি উল্লেখ করুন। যাচাই সম্পন্ন হলে এই বিজ্ঞাপনের
+          যোগাযোগের তথ্য আপনার অ্যাকাউন্টে খুলে দেওয়া হবে। একই বিজ্ঞাপনের জন্য আবার
+          টাকা পাঠানোর দরকার নেই।
+        </p>
+      </div>
+    </section>
   );
 }
 
