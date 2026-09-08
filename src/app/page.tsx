@@ -28,6 +28,17 @@ import { buttonVariants } from "@/components/ui/button";
 import { toBanglaDigits } from "@/lib/bangla";
 
 /**
+ * Hero background: the Kadirabad Cantonment gate and the river at Dayarampur.
+ *
+ * Served straight from `public/` by the Worker's ASSETS binding — this project
+ * renders plain `<img>` rather than `next/image`, as the gallery does.
+ *
+ * No width/height attributes: the element is absolutely positioned and sized
+ * entirely by CSS, so it never participates in layout and cannot shift it.
+ */
+const HERO_IMAGE_SRC = "/images/dayarampur-hero.png";
+
+/**
  * Homepage.
  *
  * Server-rendered in full so the listing content is in the initial HTML for
@@ -63,22 +74,47 @@ export default async function HomePage() {
         <AdSlot zoneSlug="home-top" className="mx-auto max-w-5xl" />
       </div>
 
-      <section className="relative overflow-hidden border-b border-ink-100 bg-surface-soft">
-        {/* Soft radial wash; decorative only. */}
+      {/* The base colour sits UNDER the photo on purpose: if the asset is ever
+          missing or still loading, the white heading stays readable on brand
+          green rather than on a blank page. */}
+      <section className="relative overflow-hidden border-b border-ink-100 bg-brand-900">
+        <img
+          src={HERO_IMAGE_SRC}
+          alt=""
+          aria-hidden="true"
+          // The hero photo is the largest element above the fold, so it is the
+          // LCP candidate: eager and high priority, never lazy.
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
+          // Responsive focal point. The photo is roughly 2:1 and the hero box
+          // is far squarer on a phone, so a centre crop there would keep the
+          // empty sky and lose the gate. Each step moves the crop right as the
+          // box widens and more of the frame fits: the cantonment gate on a
+          // phone, gate and river on a tablet, the whole scene on desktop.
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-[30%_center] sm:object-[40%_center] lg:object-center"
+        />
+
+        {/* Scrim. Dark enough for white text to clear WCAG AA over the bright
+            sky, and heavier at the bottom so the search card separates from the
+            road. Decorative only. */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_60%_at_50%_0%,rgba(11,107,58,0.10),transparent_70%)]"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink-900/70 via-ink-900/55 to-ink-900/70"
         />
+
         <div className="container-page relative py-12 sm:py-16 lg:py-20">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="mb-4 inline-flex items-center gap-2 rounded-[--radius-pill] border border-brand-100 bg-white px-4 py-1.5 text-sm font-medium text-brand-800">
+            <p className="mb-4 inline-flex items-center gap-2 rounded-[--radius-pill] border border-white/25 bg-ink-900/45 px-4 py-1.5 text-sm font-medium text-white backdrop-blur-sm">
               <MapPinned className="h-4 w-4" aria-hidden="true" />
               দয়ারামপুর, বাগাতিপাড়া, নাটোর
             </p>
-            <h1 className="text-3xl font-bold leading-tight tracking-tight text-ink-900 sm:text-4xl lg:text-5xl">
+            <h1 className="text-3xl font-bold leading-tight tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)] sm:text-4xl lg:text-5xl">
               দয়ারামপুরে বাসা খুঁজুন
             </h1>
-            <p className="mt-4 text-lg text-ink-600">সহজে, দ্রুত ও নির্ভরযোগ্যভাবে</p>
+            <p className="mt-4 text-lg text-white drop-shadow-[0_1px_8px_rgba(0,0,0,0.45)]">
+              সহজে, দ্রুত ও নির্ভরযোগ্যভাবে
+            </p>
           </div>
 
           <SearchBox
