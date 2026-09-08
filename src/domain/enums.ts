@@ -101,6 +101,18 @@ export const ADMIN_ACTIONS = [
   "PAYMENT_REFUNDED",
   "REPORT_STATUS_CHANGED",
   "SETTING_UPDATED",
+  // Advertising. `admin_logs.action` carries no CHECK constraint, so these
+  // need no migration — but they belong here so the audit trail stays typed.
+  "CAMPAIGN_APPROVED",
+  "CAMPAIGN_REJECTED",
+  "CAMPAIGN_PAUSED",
+  "CAMPAIGN_RESUMED",
+  "CAMPAIGN_CANCELLED",
+  "CREATIVE_APPROVED",
+  "CREATIVE_REJECTED",
+  "ADVERTISER_STATUS_CHANGED",
+  "AD_ZONE_UPDATED",
+  "AD_PACKAGE_UPDATED",
 ] as const;
 export type AdminAction = (typeof ADMIN_ACTIONS)[number];
 
