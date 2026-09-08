@@ -94,7 +94,7 @@
     },
     "production": {
       "name": "dayarampur",
-      "workers_dev": true,
+      "workers_dev": false,
       "triggers": {
         "crons": ["0 * * * *"]
       },
@@ -115,7 +115,7 @@
         {
           "binding": "DB",
           "database_name": "dayarampur-production",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "cde7d907-3778-4982-acbc-8da186e0a260",
           "migrations_dir": "migrations"
         }
       ],
