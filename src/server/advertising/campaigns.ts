@@ -16,7 +16,7 @@
  *   5. Advertiser-scoped reads always carry `AND advertiser_id = ?`.
  */
 import type { CampaignStatus, AdTargetDevice } from "@/domain/advertising";
-import { canTransition } from "@/domain/advertising";
+import { canTransition, isRenderedAdZone } from "@/domain/advertising";
 import { changes, execute, queryAll, queryOne } from "@/server/db/client";
 import { newId } from "@/lib/ids";
 import { DAY, nowIso } from "@/lib/time";
@@ -70,7 +70,15 @@ export interface CreateCampaignInput {
 
 export type CreateCampaignResult =
   | { ok: true; campaign: CampaignRow }
-  | { ok: false; reason: "UNKNOWN_PACKAGE" | "UNKNOWN_ZONE" | "ZONE_DISABLED" | "PACKAGE_ZONE_MISMATCH" };
+  | {
+      ok: false;
+      reason:
+        | "UNKNOWN_PACKAGE"
+        | "UNKNOWN_ZONE"
+        | "ZONE_DISABLED"
+        | "ZONE_NOT_RENDERED"
+        | "PACKAGE_ZONE_MISMATCH";
+    };
 
 interface PackageRow {
   id: string;
@@ -101,13 +109,17 @@ export async function createCampaign(
   );
   if (!pkg) return { ok: false, reason: "UNKNOWN_PACKAGE" };
 
-  const zone = await queryOne<{ id: string; is_enabled: number }>(
+  const zone = await queryOne<{ id: string; slug: string; is_enabled: number }>(
     db,
-    `SELECT id, is_enabled FROM advertisement_zones WHERE id = ?`,
+    `SELECT id, slug, is_enabled FROM advertisement_zones WHERE id = ?`,
     [input.zoneId],
   );
   if (!zone) return { ok: false, reason: "UNKNOWN_ZONE" };
   if (zone.is_enabled !== 1) return { ok: false, reason: "ZONE_DISABLED" };
+  // Checked here as well as in the catalogue: the catalogue only decides what
+  // the wizard shows, and a campaign can be created by posting a zone id
+  // directly.
+  if (!isRenderedAdZone(zone.slug)) return { ok: false, reason: "ZONE_NOT_RENDERED" };
 
   // A package tied to one placement cannot be redirected to a cheaper zone.
   if (pkg.zone_id && pkg.zone_id !== input.zoneId) {

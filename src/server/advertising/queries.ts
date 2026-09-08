@@ -10,7 +10,8 @@
  *     so there is no shape of caller mistake that returns another advertiser's
  *     rows.
  */
-import { queryAll, queryOne } from "@/server/db/client";
+import { placeholders, queryAll, queryOne } from "@/server/db/client";
+import { RENDERED_AD_ZONE_SLUGS } from "@/domain/advertising";
 import type { CampaignStatus } from "@/domain/advertising";
 
 /* -------------------------------------------------------------------------- */
@@ -28,15 +29,25 @@ export interface ZoneOption {
   max_active_ads: number;
 }
 
-/** Placements a business may buy. Disabled zones are never offered. */
+/**
+ * Placements a business may buy.
+ *
+ * Two conditions, both required: the operator enabled the zone, AND the
+ * frontend has a slot that renders it. The second is what stops an advertiser
+ * paying for a placement that would never appear — a zone with no renderer is
+ * not on sale however the database is configured.
+ */
 export async function listPurchasableZones(db: D1Database): Promise<ZoneOption[]> {
+  const slugs = RENDERED_AD_ZONE_SLUGS;
   return queryAll<ZoneOption>(
     db,
     `SELECT id, slug, name_bn, description_bn, desktop_size, mobile_size,
             base_price_bdt, max_active_ads
        FROM advertisement_zones
       WHERE is_enabled = 1
+        AND slug IN (${placeholders(slugs.length)})
       ORDER BY sort_order ASC`,
+    [...slugs],
   );
 }
 

@@ -124,10 +124,23 @@ export async function setFeatured(
   featured: boolean,
   opts: { ipHash?: string | null } = {},
 ): Promise<boolean> {
+  // Un-featuring clears `featured_until` as well as the flag.
+  //
+  // Leaving the timestamp behind was a real defect: the expiry sweep only
+  // touches rows where `is_featured = 1`, so a stale future `featured_until`
+  // would survive indefinitely on an un-featured listing — and
+  // `grantMonetizationBenefit` extends from the existing value whenever it is
+  // still in the future, so the owner's NEXT purchase would silently start
+  // from that leftover date and hand them the remainder for free.
+  //
+  // Featuring deliberately does NOT set a timestamp: a placement granted by
+  // staff has no purchased window, and the sweep leaves such rows alone.
   const result = await execute(
     db,
-    `UPDATE properties SET is_featured = ?, updated_at = ? WHERE id = ?`,
-    [featured ? 1 : 0, nowIso(), propertyId],
+    featured
+      ? `UPDATE properties SET is_featured = 1, updated_at = ? WHERE id = ?`
+      : `UPDATE properties SET is_featured = 0, featured_until = NULL, updated_at = ? WHERE id = ?`,
+    [nowIso(), propertyId],
   );
   if (changes(result) !== 1) return false;
   await recordAdminAction(db, {

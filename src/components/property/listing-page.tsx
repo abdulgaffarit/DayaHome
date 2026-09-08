@@ -13,6 +13,7 @@ import {
 import { getCurrentUser } from "@/server/auth/current-user";
 import { PropertyCard } from "./property-card";
 import { FilterPanel } from "./filter-panel";
+import { AdSlot } from "@/components/ads/ad-slot";
 import { SortAndViewControls } from "./sort-controls";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -94,9 +95,24 @@ export async function ListingPage({
         {description ? <p className="mt-2 max-w-2xl text-ink-600">{description}</p> : null}
       </header>
 
+      {/* Ad zones here are targeted by the category being browsed. The search
+          page reuses this component with no category, and gets the
+          search-specific zone instead of the category ones. */}
+      {category ? (
+        <AdSlot
+          zoneSlug="category-top"
+          categorySlug={category.slug}
+          className="mb-6"
+        />
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-[19rem_1fr]">
         <aside aria-label="ফিল্টার">
           <FilterPanel category={category} areas={areas} propertyTypes={propertyTypes} />
+
+          {category ? (
+            <AdSlot zoneSlug="category-sidebar" categorySlug={category.slug} className="mt-4" />
+          ) : null}
         </aside>
 
         <div className="min-w-0">
@@ -144,6 +160,12 @@ export async function ListingPage({
                   />
                 ))}
               </div>
+
+              <AdSlot
+                zoneSlug={category ? "category-inline" : "search-inline"}
+                categorySlug={category?.slug}
+                className="mt-8"
+              />
 
               <Pagination
                 className="mt-10"

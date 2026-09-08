@@ -2,12 +2,18 @@ import Link from "next/link";
 import { Mail, MapPin, Phone } from "lucide-react";
 import { Logo } from "./logo";
 import { ALL_CATEGORY_LINKS } from "./nav-links";
+import { AdSlot } from "@/components/ads/ad-slot";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
 export function Footer() {
   return (
     <footer className="mt-16 border-t border-ink-100 bg-surface-soft">
+      {/* Ad zone: shown site-wide, above the footer columns. */}
+      <div className="container-page pt-8">
+        <AdSlot zoneSlug="site-footer" className="mx-auto max-w-5xl" />
+      </div>
+
       <div className="container-page grid gap-10 py-12 md:grid-cols-2 lg:grid-cols-4">
         <div className="lg:col-span-1">
           <Logo />

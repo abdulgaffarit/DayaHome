@@ -100,3 +100,45 @@ export type CreativeMimeType = (typeof CREATIVE_MIME_TYPES)[number];
 export function isCampaignStatus(value: string): value is CampaignStatus {
   return (CAMPAIGN_STATUSES as readonly string[]).includes(value);
 }
+
+/**
+ * The zone slugs the frontend actually renders.
+ *
+ * `advertisement_zones` defines what a placement IS and what it costs; this
+ * list records which of those the application currently has a slot for. They
+ * are different facts, and only one of them can live in code.
+ *
+ * It exists because the two drifted: every zone in the table was purchasable
+ * while only four had a slot, so an advertiser could pay for a placement that
+ * would never appear on any page. Selling is now gated on this list, so a zone
+ * without a renderer cannot be bought no matter what the database says.
+ *
+ * To add a zone here, first render an <AdSlot zoneSlug="..."> for it.
+ */
+export const RENDERED_AD_ZONE_SLUGS = [
+  "home-top",
+  "home-hero-under",
+  "home-mid",
+  "home-bottom",
+  "category-top",
+  "category-inline",
+  "category-sidebar",
+  "search-inline",
+  "property-top",
+  "property-sidebar",
+  "site-footer",
+] as const;
+
+export type RenderedAdZoneSlug = (typeof RENDERED_AD_ZONE_SLUGS)[number];
+
+/**
+ * Whether a slot exists for this zone.
+ *
+ * `home-sidebar` is deliberately absent: the homepage has no sidebar column,
+ * and inventing one would be a redesign rather than a fix. It stays defined in
+ * the database — its pricing and description are intact — but it cannot be
+ * sold until something renders it.
+ */
+export function isRenderedAdZone(slug: string): boolean {
+  return (RENDERED_AD_ZONE_SLUGS as readonly string[]).includes(slug);
+}

@@ -21,9 +21,11 @@ import {
   listPurchasableZones,
 } from "@/server/advertising/queries";
 import { createCampaignPayment } from "@/server/advertising/payments";
+import { createCampaign } from "@/server/advertising/campaigns";
+import { isRenderedAdZone, RENDERED_AD_ZONE_SLUGS } from "@/domain/advertising";
 import { settlePayment } from "@/server/payments/unlock-service";
 import { approveCampaign, getCampaignById } from "@/server/advertising/campaigns";
-import { execute } from "@/server/db/client";
+import { execute, queryAll, queryOne } from "@/server/db/client";
 
 let ctx: TestDb;
 
@@ -75,10 +77,64 @@ describe("public catalogue", () => {
     const zones = await listPurchasableZones(ctx.db);
     const packages = await listPurchasablePackages(ctx.db);
 
-    expect(zones).toHaveLength(11);
+    // Every rendered zone except the one just disabled. (Not all twelve rows:
+    // a zone with no renderer is never on sale — asserted separately below.)
+    expect(zones).toHaveLength(RENDERED_AD_ZONE_SLUGS.length - 1);
     expect(zones.map((z) => z.id)).not.toContain("zone_home_top");
     // The exclusive package ships inactive until an operator prices it.
     expect(packages.map((p) => p.id)).not.toContain("adpkg_exclusive");
+  });
+
+  it("CRITICAL: every purchasable zone has a renderer", async () => {
+    // The defect this guards: all twelve zones were on sale while only four
+    // had a slot, so an advertiser could pay for a placement that would never
+    // appear on any page.
+    const zones = await listPurchasableZones(ctx.db);
+
+    expect(zones.length).toBeGreaterThan(0);
+    for (const zone of zones) {
+      expect(isRenderedAdZone(zone.slug), `${zone.slug} is sold but not rendered`).toBe(true);
+    }
+  });
+
+  it("CRITICAL: every rendered zone slug exists in the database", async () => {
+    // The other direction: a slug in the registry with no row would render
+    // nothing forever and silently.
+    const rows = await queryAll<{ slug: string }>(ctx.db, `SELECT slug FROM advertisement_zones`);
+    const known = new Set(rows.map((row) => row.slug));
+
+    for (const slug of RENDERED_AD_ZONE_SLUGS) {
+      expect(known.has(slug), `${slug} is rendered but not defined`).toBe(true);
+    }
+  });
+
+  it("a zone with no renderer is not offered even when enabled", async () => {
+    // home-sidebar is enabled in the seed but the homepage has no sidebar.
+    const zones = await listPurchasableZones(ctx.db);
+    expect(zones.map((z) => z.slug)).not.toContain("home-sidebar");
+
+    const enabled = await queryOne<{ is_enabled: number }>(
+      ctx.db,
+      `SELECT is_enabled FROM advertisement_zones WHERE slug = 'home-sidebar'`,
+    );
+    // Still enabled in the database — the gate is the missing renderer.
+    expect(enabled!.is_enabled).toBe(1);
+  });
+
+  it("CRITICAL: a zone with no renderer cannot be bought by posting its id", async () => {
+    const user = await createUser(ctx.db);
+    const advertiser = await createAdvertiserFor(ctx.db, user.id);
+
+    // Bypasses the wizard entirely, which is exactly how someone would try.
+    await expect(
+      createCampaign(ctx.db, {
+        advertiserId: advertiser.id,
+        zoneId: "zone_home_sidebar",
+        packageId: "adpkg_basic",
+        title: "ব্যানার",
+        destinationUrl: "https://example.test",
+      }),
+    ).resolves.toEqual({ ok: false, reason: "ZONE_NOT_RENDERED" });
   });
 
   it("the catalogue carries no advertiser data at all", async () => {

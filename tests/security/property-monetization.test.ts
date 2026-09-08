@@ -20,6 +20,7 @@ import { settlePayment } from "@/server/payments/unlock-service";
 import { runScheduledJobs } from "@/server/jobs/run";
 import { searchProperties } from "@/server/properties/queries";
 import { execute, queryOne } from "@/server/db/client";
+import { setFeatured } from "@/server/admin/moderation";
 import { DAY, nowIso } from "@/lib/time";
 
 let ctx: TestDb;
@@ -286,6 +287,55 @@ describe("expiry", () => {
     // A second run changes nothing, as every job here must.
     const second = await runScheduledJobs(ctx.db);
     expect(second.results.find((r) => r.name === "expire-monetization")!.changed).toBe(0);
+  });
+
+  it("CRITICAL: un-featuring clears the paid window so it cannot be reused", async () => {
+    const { owner, property } = await ownedProperty();
+    const admin = await createUser(ctx.db, { role: "ADMIN" });
+
+    // Buy and settle a real featured week.
+    const { created, gateway } = await buy(owner, property.id, "plan_feat_7");
+    if (created.status !== "REDIRECT") throw new Error("expected redirect");
+    await settle(gateway, created.transactionId);
+    expect((await propertyState(property.id))!.featured_until).toBeTruthy();
+
+    // An admin takes the placement down.
+    await expect(setFeatured(ctx.db, admin.id, property.id, false)).resolves.toBe(true);
+
+    const after = await propertyState(property.id);
+    expect(after).toMatchObject({ is_featured: 0, featured_until: null });
+  });
+
+  it("CRITICAL: a later purchase does not inherit a cleared window", async () => {
+    const { owner, property } = await ownedProperty();
+    const admin = await createUser(ctx.db, { role: "ADMIN" });
+
+    const first = await buy(owner, property.id, "plan_feat_30");
+    if (first.created.status !== "REDIRECT") throw new Error("expected redirect");
+    await settle(first.gateway, first.created.transactionId);
+    await setFeatured(ctx.db, admin.id, property.id, false);
+
+    // Buying seven days after being un-featured must give seven days — not
+    // seven plus whatever remained of the cancelled month.
+    const second = await buy(owner, property.id, "plan_feat_7");
+    if (second.created.status !== "REDIRECT") throw new Error("expected redirect");
+    await settle(second.gateway, second.created.transactionId);
+
+    const state = await propertyState(property.id);
+    const days = Math.round((Date.parse(state!.featured_until!) - Date.now()) / DAY);
+    expect(days).toBe(7);
+  });
+
+  it("featuring by staff still grants no purchased window", async () => {
+    const { property } = await ownedProperty();
+    const admin = await createUser(ctx.db, { role: "ADMIN" });
+
+    await setFeatured(ctx.db, admin.id, property.id, true);
+
+    // A staff placement has no end date, and the sweep leaves it alone.
+    const state = await propertyState(property.id);
+    expect(state).toMatchObject({ is_featured: 1, featured_until: null });
+    await expect(expireFeaturedProperties(ctx.db)).resolves.toBe(0);
   });
 
   it("a manually featured listing with no expiry is left alone", async () => {

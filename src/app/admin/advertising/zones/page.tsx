@@ -3,6 +3,7 @@ import { requireSuperAdmin } from "@/server/auth/current-user";
 import { listZonesForAdmin } from "@/server/admin/advertising";
 import { ZoneControls } from "@/components/admin/zone-controls";
 import { toBanglaDigits } from "@/lib/bangla";
+import { isRenderedAdZone } from "@/domain/advertising";
 
 export const metadata = { title: "অ্যাড জোন" };
 
@@ -19,11 +20,23 @@ export default async function AdminZonesPage() {
       <p className="text-sm text-ink-600">
         জোনগুলো ডেটাবেজে সংরক্ষিত — অ্যাপ্লিকেশনে কোনো জোন হার্ডকোড করা নেই।
       </p>
+      <p className="text-sm text-ink-600">
+        যে জোনের জন্য সাইটে এখনো কোনো জায়গা তৈরি হয়নি, সেটি চালু থাকলেও বিক্রি করা হয় না —
+        নিচে আলাদা করে চিহ্নিত।
+      </p>
       <ul className="space-y-3">
         {zones.map((zone) => (
           <li key={zone.id} className="rounded-[--radius-card] border border-ink-200 bg-white p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="font-semibold text-ink-900">{zone.name_bn}</p>
+              {/* A zone with no slot cannot be sold, whatever `is_enabled`
+                  says — saying so here stops an admin enabling it and
+                  wondering why nobody can buy it. */}
+              {!isRenderedAdZone(zone.slug) ? (
+                <span className="rounded-full bg-warning-50 px-2.5 py-0.5 text-xs text-warning-800">
+                  সাইটে দেখানোর ব্যবস্থা নেই — বিক্রি বন্ধ
+                </span>
+              ) : null}
               <span
                 className={
                   zone.is_enabled === 1

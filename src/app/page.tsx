@@ -58,6 +58,11 @@ export default async function HomePage() {
       {/* ---------------------------------------------------------------- */}
       {/* Hero                                                              */}
       {/* ---------------------------------------------------------------- */}
+      {/* Ad zone: the top banner, above the hero. */}
+      <div className="container-page pt-4">
+        <AdSlot zoneSlug="home-top" className="mx-auto max-w-5xl" />
+      </div>
+
       <section className="relative overflow-hidden border-b border-ink-100 bg-surface-soft">
         {/* Soft radial wash; decorative only. */}
         <div
@@ -250,6 +255,11 @@ export default async function HomePage() {
           </Link>
         </div>
       </section>
+
+      {/* Ad zone: the bottom banner, immediately above the footer. */}
+      <div className="container-page pb-12">
+        <AdSlot zoneSlug="home-bottom" className="mx-auto max-w-5xl" />
+      </div>
     </>
   );
 }

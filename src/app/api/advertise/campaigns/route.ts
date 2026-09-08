@@ -46,6 +46,7 @@ export async function POST(request: Request) {
         UNKNOWN_PACKAGE: "প্যাকেজটি এখন আর পাওয়া যাচ্ছে না।",
         UNKNOWN_ZONE: "জোনটি পাওয়া যায়নি।",
         ZONE_DISABLED: "এই জোনে এখন বিজ্ঞাপন নেওয়া হচ্ছে না।",
+        ZONE_NOT_RENDERED: "এই জোনটি এখনো সাইটে দেখানো হয় না, তাই বিক্রি করা হচ্ছে না।",
         PACKAGE_ZONE_MISMATCH: "এই প্যাকেজটি নির্বাচিত জোনে ব্যবহার করা যাবে না।",
       };
       return jsonError("VALIDATION_FAILED", messages[result.reason]);
