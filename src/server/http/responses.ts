@@ -84,13 +84,32 @@ export function validationError(fieldErrors: Record<string, string[] | undefined
 }
 
 /**
+ * Next signals `redirect()` and `notFound()` by THROWING a tagged error rather
+ * than returning anything, so a catch-all must let those back out. Swallowing
+ * one turns a working redirect into a 500 — which is exactly what happened to
+ * logout: the browser followed a form POST and was shown the SERVER_ERROR JSON
+ * at /api/auth/logout instead of being sent home.
+ */
+function isFrameworkSignal(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "digest" in error &&
+    typeof (error as { digest?: unknown }).digest === "string"
+  );
+}
+
+/**
  * Wraps a route handler so an unexpected throw becomes a clean 500 while the
  * real error is logged server-side.
+ *
+ * Framework control-flow signals are re-thrown untouched; they are not errors.
  */
 export async function guarded(handler: () => Promise<Response>): Promise<Response> {
   try {
     return await handler();
   } catch (error) {
+    if (isFrameworkSignal(error)) throw error;
     console.error("[api] unhandled error", error);
     return jsonError("SERVER_ERROR");
   }
