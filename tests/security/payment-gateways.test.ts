@@ -33,6 +33,10 @@ const withSslcommerz = {
   SSLCOMMERZ_IS_SANDBOX: "true",
 } as unknown as AppEnv;
 
+const withUddoktaPay = {
+  UDDOKTAPAY_API_KEY: "test-key-not-a-real-credential",
+} as unknown as AppEnv;
+
 const withoutSecrets = {} as unknown as AppEnv;
 
 const URLS = {
@@ -221,12 +225,30 @@ describe("manual gateway", () => {
 
 describe("selecting a gateway", () => {
   it("uses the primary when it is enabled and configured", async () => {
-    const resolution = await resolveGateway(ctx.db, withSslcommerz);
+    // UddoktaPay is the primary from migration 0007 onwards.
+    const resolution = await resolveGateway(ctx.db, withUddoktaPay);
     expect(resolution.ok).toBe(true);
     if (resolution.ok) {
-      expect(resolution.gateway.id).toBe("SSLCOMMERZ");
+      expect(resolution.gateway.id).toBe("UDDOKTAPAY");
       expect(resolution.usedFallback).toBe(false);
     }
+  });
+
+  it("CRITICAL: never routes to SSLCOMMERZ, which 0007 disabled", async () => {
+    // Its credentials are present; only the disabled row keeps it out.
+    const resolution = await resolveGateway(
+      ctx.db,
+      { ...withSslcommerz, ...withUddoktaPay } as unknown as AppEnv,
+    );
+    expect(resolution.ok && resolution.gateway.id).toBe("UDDOKTAPAY");
+
+    // Even asked for by name.
+    const asked = await resolveGateway(
+      ctx.db,
+      { ...withSslcommerz, ...withUddoktaPay } as unknown as AppEnv,
+      "SSLCOMMERZ",
+    );
+    expect(asked.ok && asked.gateway.id).toBe("UDDOKTAPAY");
   });
 
   it("CRITICAL: refuses when the primary is enabled but has no credentials", async () => {
@@ -260,12 +282,12 @@ describe("selecting a gateway", () => {
               settings_json = '{"account_number":"01700000000"}' WHERE id = 'MANUAL'`,
     );
 
-    const chosen = await resolveGateway(ctx.db, withSslcommerz, "MANUAL");
+    const chosen = await resolveGateway(ctx.db, withUddoktaPay, "MANUAL");
     expect(chosen.ok && chosen.gateway.id).toBe("MANUAL");
 
     // An unusable choice is ignored in favour of the primary.
-    const ignored = await resolveGateway(ctx.db, withSslcommerz, "BKASH");
-    expect(ignored.ok && ignored.gateway.id).toBe("SSLCOMMERZ");
+    const ignored = await resolveGateway(ctx.db, withUddoktaPay, "BKASH");
+    expect(ignored.ok && ignored.gateway.id).toBe("UDDOKTAPAY");
   });
 
   it("skips a disabled gateway even when its credentials exist", async () => {
@@ -279,11 +301,18 @@ describe("selecting a gateway", () => {
 describe("gateway status for the admin screen", () => {
   it("reports enabled, configured and usable separately", async () => {
     const statuses = await listGatewayStatuses(ctx.db, withoutSecrets);
-    const sslcommerz = statuses.find((s) => s.id === "SSLCOMMERZ")!;
 
-    // Enabled by the operator, but the secrets are missing.
-    expect(sslcommerz.enabled).toBe(true);
-    expect(sslcommerz.configured).toBe(false);
+    // Enabled by the operator, but the credential is missing.
+    const uddoktapay = statuses.find((s) => s.id === "UDDOKTAPAY")!;
+    expect(uddoktapay.enabled).toBe(true);
+    expect(uddoktapay.configured).toBe(false);
+    expect(uddoktapay.usable).toBe(false);
+
+    // The mirror image: credentials present, but disabled by 0007.
+    const configured = await listGatewayStatuses(ctx.db, withSslcommerz);
+    const sslcommerz = configured.find((s) => s.id === "SSLCOMMERZ")!;
+    expect(sslcommerz.enabled).toBe(false);
+    expect(sslcommerz.configured).toBe(true);
     expect(sslcommerz.usable).toBe(false);
   });
 

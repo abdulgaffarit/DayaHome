@@ -35,7 +35,14 @@ export async function POST(
     if (contentType.includes("json")) {
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
       for (const [key, value] of Object.entries(body)) {
-        if (typeof value === "string" || typeof value === "number") payload[key] = String(value);
+        if (typeof value === "string" || typeof value === "number") {
+          payload[key] = String(value);
+        } else if (value && typeof value === "object") {
+          // Keep nested objects rather than dropping them: UddoktaPay posts the
+          // invoice with `metadata` as an object, and that metadata is the only
+          // thing tying the callback to our payment row. Adapters parse it back.
+          payload[key] = JSON.stringify(value);
+        }
       }
     } else {
       const form = await request.formData().catch(() => null);

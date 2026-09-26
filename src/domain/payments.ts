@@ -34,7 +34,14 @@ export const PAYMENT_TYPE_SUBJECT: Record<PaymentType, "PROPERTY" | "ADVERTISEME
   SUBSCRIPTION: "ACCOUNT",
 };
 
-export const GATEWAY_IDS = ["SSLCOMMERZ", "BKASH", "NAGAD", "ROCKET", "MANUAL"] as const;
+export const GATEWAY_IDS = [
+  "UDDOKTAPAY",
+  "SSLCOMMERZ",
+  "BKASH",
+  "NAGAD",
+  "ROCKET",
+  "MANUAL",
+] as const;
 export type GatewayId = (typeof GATEWAY_IDS)[number];
 
 export function isGatewayId(value: string): value is GatewayId {

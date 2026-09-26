@@ -4,6 +4,7 @@ import { buildContext, requireAuth, requireSameOrigin } from "@/server/http/cont
 import { guarded, jsonError, jsonOk, validationError } from "@/server/http/responses";
 import { RATE_LIMITS, consumeRateLimit } from "@/server/security/rate-limit";
 import { resolveGateway } from "@/server/payments/registry";
+import { gatewayCallbackUrls } from "@/server/payments/callback-urls";
 import { isGatewayId } from "@/domain/payments";
 import { createUnlockPayment } from "@/server/payments/unlock-service";
 
@@ -50,12 +51,7 @@ export async function POST(request: Request) {
       propertyId: parsed.data.propertyId,
       priceBdt: contactUnlockPriceBdt(),
       gateway: resolution.gateway,
-      urls: {
-        successUrl: `${base}/api/payments/sslcommerz/return?outcome=success`,
-        failUrl: `${base}/api/payments/sslcommerz/return?outcome=fail`,
-        cancelUrl: `${base}/api/payments/sslcommerz/return?outcome=cancel`,
-        ipnUrl: `${base}/api/payments/sslcommerz/ipn`,
-      },
+      urls: gatewayCallbackUrls(resolution.gateway.id, base),
     });
 
     switch (result.status) {

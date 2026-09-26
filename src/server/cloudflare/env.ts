@@ -13,6 +13,15 @@ interface AppSecrets {
   SESSION_SECRET?: string;
   SSLCOMMERZ_STORE_ID?: string;
   SSLCOMMERZ_STORE_PASSWORD?: string;
+  /**
+   * UddoktaPay. The key is a Worker secret (`wrangler secret put
+   * UDDOKTAPAY_API_KEY`) and is never committed, never sent to the browser and
+   * never stored in `payment_gateways.settings_json`, which holds non-secret
+   * operational values only. The base URL is not a secret; it is declared here
+   * so a sandbox account can override the default without a code change.
+   */
+  UDDOKTAPAY_API_KEY?: string;
+  UDDOKTAPAY_BASE_URL?: string;
   TURNSTILE_SECRET?: string;
   NEXT_PUBLIC_TURNSTILE_SITE_KEY?: string;
   EMAIL_PROVIDER?: string;

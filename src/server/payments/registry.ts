@@ -17,6 +17,7 @@ import { queryAll, queryOne } from "@/server/db/client";
 import type { AppEnv } from "@/server/cloudflare/env";
 import type { PaymentGateway } from "./gateway";
 import { SslcommerzGateway } from "./gateways/sslcommerz";
+import { UddoktaPayGateway } from "./gateways/uddoktapay";
 import { ManualGateway, type ManualGatewaySettings } from "./gateways/manual";
 import { PENDING_INTEGRATIONS, UnconfiguredGateway } from "./gateways/unconfigured";
 
@@ -74,6 +75,11 @@ export function buildGateway(
   settings: Record<string, unknown> = {},
 ): PaymentGateway {
   switch (id) {
+    case "UDDOKTAPAY":
+      return new UddoktaPayGateway({
+        apiKey: env.UDDOKTAPAY_API_KEY,
+        baseUrl: env.UDDOKTAPAY_BASE_URL,
+      });
     case "SSLCOMMERZ":
       return new SslcommerzGateway({
         storeId: env.SSLCOMMERZ_STORE_ID,
