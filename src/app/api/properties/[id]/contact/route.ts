@@ -2,13 +2,14 @@ import { contactUnlockPriceBdt } from "@/server/cloudflare/env";
 import { buildContext } from "@/server/http/context";
 import { guarded, jsonError, jsonOk } from "@/server/http/responses";
 import { RATE_LIMITS, consumeRateLimit } from "@/server/security/rate-limit";
-import { resolveContact } from "@/server/properties/contact";
+import { resolveContactAccess } from "@/server/properties/contact";
+import { recordAdminAction } from "@/server/admin/audit";
 
 /**
  * GET /api/properties/{id}/contact
  *
  * The single door to private contact information. The authorization chain lives
- * in `resolveContact`:
+ * in `resolveContactAccess`:
  *   1. authenticate the caller
  *   2. verify the property exists
  *   3. verify an unlock exists for THIS user and THIS property
@@ -29,7 +30,28 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const limit = await consumeRateLimit(context.db, RATE_LIMITS.contact, context.subject);
     if (!limit.allowed) return jsonError("RATE_LIMITED");
 
-    const result = await resolveContact(context.db, id, context.user, priceBdt);
+    const { response: result, via } = await resolveContactAccess(
+      context.db,
+      id,
+      context.user,
+      priceBdt,
+    );
+
+    // Staff can read these details without paying, so every such read is
+    // recorded. Owners viewing their own listing are not staff access and are
+    // not logged. Awaited rather than fired-and-forgotten: on Workers, work
+    // left running after the response is not guaranteed to complete, and an
+    // audit trail that silently drops entries is worse than none.
+    if (via === "STAFF" && context.user) {
+      await recordAdminAction(context.db, {
+        adminId: context.user.id,
+        action: "CONTACT_VIEWED",
+        entityType: "property",
+        entityId: id,
+        metadata: { via },
+        ipHash: context.ipHash,
+      });
+    }
 
     if (result.locked) {
       // 401 when the caller simply is not signed in, 402 when they are but have

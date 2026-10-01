@@ -9,7 +9,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDb } from "../helpers/d1";
 import { createProperty, createUser, grantUnlock } from "../helpers/factories";
-import { decideUnlock, hasActiveUnlock, resolveContact } from "@/server/properties/contact";
+import {
+  decideUnlock,
+  hasActiveUnlock,
+  resolveContact,
+  resolveContactAccess,
+} from "@/server/properties/contact";
 import { execute } from "@/server/db/client";
 
 const PRICE = 50;
@@ -114,6 +119,30 @@ describe("contact unlock authorization", () => {
 
     const { decision } = await decideUnlock(ctx.db, property.id, admin);
     expect(decision).toEqual({ allowed: true, via: "STAFF" });
+  });
+
+  it("reports HOW access was granted, so the route can audit staff reads", async () => {
+    const property = await createProperty(ctx.db, { phone: OWNER_PHONE });
+    const admin = await createUser(ctx.db, { role: "ADMIN" });
+    const buyer = await createUser(ctx.db);
+
+    const staff = await resolveContactAccess(ctx.db, property.id, admin, PRICE);
+    expect(staff.via).toBe("STAFF");
+    expect(staff.response.locked).toBe(false);
+
+    // An owner is not staff access and must not be logged as such.
+    const owner = await createUser(ctx.db, { role: "OWNER" });
+    const theirs = await createProperty(ctx.db, { ownerId: owner.id, phone: OWNER_PHONE });
+    expect((await resolveContactAccess(ctx.db, theirs.id, owner, PRICE)).via).toBe("OWNER");
+
+    // A paying user, likewise.
+    await grantUnlock(ctx.db, buyer.id, property.id);
+    expect((await resolveContactAccess(ctx.db, property.id, buyer, PRICE)).via).toBe("PAID_UNLOCK");
+
+    // Nobody who is refused learns anything about why someone else would pass.
+    const refused = await resolveContactAccess(ctx.db, property.id, await createUser(ctx.db), PRICE);
+    expect(refused.via).toBeNull();
+    expect(JSON.stringify(refused.response)).not.toContain("STAFF");
   });
 
   it("an ACTIVE unlock whose payment is not PAID still keeps the contact locked", async () => {

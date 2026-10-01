@@ -101,6 +101,10 @@ export const ADMIN_ACTIONS = [
   "PAYMENT_REFUNDED",
   "REPORT_STATUS_CHANGED",
   "SETTING_UPDATED",
+  // Staff reading a listing's private contact details. Not a mutation, but it
+  // is the one place staff see data a paying user had to buy, so it is logged
+  // like any other privileged act.
+  "CONTACT_VIEWED",
   // Advertising. `admin_logs.action` carries no CHECK constraint, so these
   // need no migration — but they belong here so the audit trail stays typed.
   "CAMPAIGN_APPROVED",

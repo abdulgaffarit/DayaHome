@@ -11,6 +11,7 @@ import {
   getPublicPropertyBySlug,
   searchProperties,
 } from "@/server/properties/queries";
+import { getOwnerStats } from "@/server/properties/owner";
 import { addFavorite, listFavorites, removeFavorite } from "@/server/properties/favorites";
 import { createReport } from "@/server/properties/reports";
 import { recordPropertyView } from "@/server/properties/views";
@@ -453,5 +454,44 @@ describe("view counting", () => {
       [property.id],
     );
     expect(counts).toMatchObject({ views_count: 3, unique_views_count: 2 });
+  });
+});
+
+describe("owner dashboard stats", () => {
+  it("returns 0, never null, for an owner with no listings", async () => {
+    const owner = await createUser(ctx.db, { role: "OWNER" });
+
+    const stats = await getOwnerStats(ctx.db, owner.id);
+
+    // SUM() over zero rows is NULL while COUNT(*) is 0, so the row exists and
+    // the `?? defaults` fallback never fires. Un-COALESCEd, these three reached
+    // the dashboard as null and rendered the literal text "null" in its cards.
+    expect(stats).toEqual({
+      total: 0,
+      approved: 0,
+      pending: 0,
+      rejected: 0,
+      totalViews: 0,
+      totalUnlocks: 0,
+    });
+    for (const [key, value] of Object.entries(stats)) {
+      expect(typeof value, `${key} must be a number`).toBe("number");
+    }
+  });
+
+  it("counts each status once the owner has listings", async () => {
+    const owner = await createUser(ctx.db, { role: "OWNER" });
+    await createProperty(ctx.db, { ownerId: owner.id, status: "APPROVED" });
+    await createProperty(ctx.db, { ownerId: owner.id, status: "APPROVED" });
+    await createProperty(ctx.db, { ownerId: owner.id, status: "PENDING" });
+    await createProperty(ctx.db, { ownerId: owner.id, status: "REJECTED" });
+    // Another owner's listing must not be counted.
+    await createProperty(ctx.db, { status: "APPROVED" });
+
+    const stats = await getOwnerStats(ctx.db, owner.id);
+    expect(stats.total).toBe(4);
+    expect(stats.approved).toBe(2);
+    expect(stats.pending).toBe(1);
+    expect(stats.rejected).toBe(1);
   });
 });

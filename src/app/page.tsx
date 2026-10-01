@@ -35,8 +35,13 @@ import { toBanglaDigits } from "@/lib/bangla";
  *
  * No width/height attributes: the element is absolutely positioned and sized
  * entirely by CSS, so it never participates in layout and cannot shift it.
+ *
+ * WebP, not PNG. This is the LCP element, and a photograph stored as PNG was
+ * 771 KB; at WebP q70 it is 258 KB for the same 1774x887 frame, which matters
+ * on the rural 3G connections much of this audience is on. Detail loss is
+ * invisible behind the scrim the hero text needs anyway.
  */
-const HERO_IMAGE_SRC = "/images/dayarampur-hero.png";
+const HERO_IMAGE_SRC = "/images/dayarampur-hero.webp";
 
 /**
  * Homepage.

@@ -126,10 +126,14 @@ export interface OwnerStats {
 export async function getOwnerStats(db: D1Database, ownerId: string): Promise<OwnerStats> {
   const row = await queryOne<OwnerStats>(
     db,
-    `SELECT COUNT(*)                                              AS total,
-            SUM(CASE WHEN status = 'APPROVED' THEN 1 ELSE 0 END)  AS approved,
-            SUM(CASE WHEN status = 'PENDING'  THEN 1 ELSE 0 END)  AS pending,
-            SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END)  AS rejected,
+    // Every aggregate is COALESCEd. SUM() over zero rows is NULL, while
+    // COUNT(*) is 0, so an owner with no listings still produced a row — the
+    // `row ?? defaults` fallback below never fired and the dashboard rendered
+    // the string "null" in its stat cards.
+    `SELECT COUNT(*)                                                       AS total,
+            COALESCE(SUM(CASE WHEN status = 'APPROVED' THEN 1 ELSE 0 END), 0) AS approved,
+            COALESCE(SUM(CASE WHEN status = 'PENDING'  THEN 1 ELSE 0 END), 0) AS pending,
+            COALESCE(SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END), 0) AS rejected,
             COALESCE(SUM(views_count), 0)                         AS totalViews,
             COALESCE(SUM(unlocks_count), 0)                       AS totalUnlocks
        FROM properties WHERE owner_id = ?`,

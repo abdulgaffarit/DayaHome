@@ -10,6 +10,9 @@ import { timingSafeEqual } from "@/lib/ids";
 const SANDBOX_BASE = "https://sandbox.sslcommerz.com";
 const LIVE_BASE = "https://securepay.sslcommerz.com";
 
+/** Matches the UddoktaPay adapter, so both gateways fail the same way. */
+const REQUEST_TIMEOUT_MS = 15_000;
+
 const SESSION_PATH = "/gwprocess/v4/api.php";
 const VALIDATION_PATH = "/validator/api/validationserverAPI.php";
 
@@ -84,6 +87,10 @@ export class SslcommerzProvider implements PaymentProvider {
 
     try {
       const response = await fetch(`${this.base}${SESSION_PATH}`, {
+        // Bounded like every other gateway call: an unbounded fetch holds the
+        // Worker invocation open until the platform kills it, leaving the payer
+        // with no reply at all.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
@@ -153,7 +160,10 @@ export class SslcommerzProvider implements PaymentProvider {
 
     let data: ValidationApiResponse;
     try {
-      const response = await fetch(url.toString(), { method: "GET" });
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
       if (!response.ok) {
         return { verified: false, status: "UNKNOWN", failureReason: `validator_http_${response.status}` };
       }

@@ -14,8 +14,11 @@ import type { ContactResponse, PrivateContact } from "@/domain/property";
 import { queryOne } from "@/server/db/client";
 import { hasAtLeastRole } from "@/domain/enums";
 
+/** How access was granted, when it was. */
+export type UnlockVia = "PAID_UNLOCK" | "OWNER" | "STAFF";
+
 export type UnlockDecision =
-  | { allowed: true; via: "PAID_UNLOCK" | "OWNER" | "STAFF" }
+  | { allowed: true; via: UnlockVia }
   | { allowed: false; reason: "AUTH_REQUIRED" | "PAYMENT_REQUIRED" | "NOT_FOUND" };
 
 interface PrivateRow {
@@ -124,21 +127,40 @@ export async function resolveContact(
   user: AuthUser | null,
   priceBdt: number,
 ): Promise<ContactResponse> {
+  return (await resolveContactAccess(db, propertyId, user, priceBdt)).response;
+}
+
+/**
+ * As `resolveContact`, but also reports HOW access was granted.
+ *
+ * The route needs this to audit staff reads: `via` never reaches the browser,
+ * because telling a locked-out caller why someone else would be allowed in
+ * leaks the shape of the authorization rules.
+ */
+export async function resolveContactAccess(
+  db: D1Database,
+  propertyId: string,
+  user: AuthUser | null,
+  priceBdt: number,
+): Promise<{ response: ContactResponse; via: UnlockVia | null }> {
   const { decision, row } = await decideUnlock(db, propertyId, user);
 
   if (!decision.allowed || !row) {
     return {
-      locked: true,
-      priceBdt,
-      reason: decision.allowed
-        ? "PAYMENT_REQUIRED"
-        : decision.reason === "AUTH_REQUIRED"
-          ? "AUTH_REQUIRED"
-          : "PAYMENT_REQUIRED",
+      response: {
+        locked: true,
+        priceBdt,
+        reason: decision.allowed
+          ? "PAYMENT_REQUIRED"
+          : decision.reason === "AUTH_REQUIRED"
+            ? "AUTH_REQUIRED"
+            : "PAYMENT_REQUIRED",
+      },
+      via: null,
     };
   }
 
-  return { locked: false, ...toPrivateContact(row) };
+  return { response: { locked: false, ...toPrivateContact(row) }, via: decision.via };
 }
 
 function toPrivateContact(row: PrivateRow): PrivateContact {
